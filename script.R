@@ -103,51 +103,49 @@ lend_test <- testing(train_test_split)
 
 rec_obj <- recipe(int_rate ~ ., data = lend_train) |>
   step_normalize(applicant_numeric, credit_numeric) |>
-  step_impute_mean(mean_impute_vals) |> 
-  step_other()
+  step_impute_mean(mean_impute_vals)
 
 # Review data
 prep(rec_obj, lend_train) %>% bake(new_data = NULL)
 
-# lend_linear <- linear_reg()
+lend_linear <- linear_reg()
 
-# lend_linear_wflow <- 
-#   workflow() |>
-#   add_model(lend_linear) |>
-#   add_recipe(rec_obj)
+lend_linear_wflow <-
+  workflow() |>
+  add_model(lend_linear) |>
+  add_recipe(rec_obj)
 
-# lend_linear_fit <-
-#   lend_linear_wflow |>
-#   fit(data = lend_train)
-# 
-# predict(lend_linear_fit, lend_test)
-# 
-# rsq(lend_ranger_results, truth = int_rate, estimate = .pred)
-# 
-# lend_ranger_results <-
-#   bind_cols(predict(lend_ranger_fit, lend_train)) |>
-#   bind_cols(lend_train |>
-#               select(int_rate))
+lend_linear_fit <-
+  lend_linear_wflow |>
+  fit(data = lend_train)
+
+predict(lend_linear_fit, lend_test)
+
+lend_ranger_results <-
+  bind_cols(predict(lend_linear_fit, lend_train)) |>
+  bind_cols(lend_train |>
+              select(int_rate))
+rsq(lend_linear_results, truth = int_rate, estimate = .pred)
 
 lend_rand <- rand_forest(mode = "regression") |>
   set_engine("ranger",
              importance = "permutation")
-# 
-# lend_ranger_wflow <- 
-#   workflow() |>
-#   add_model(lend_rand) |>
-#   add_recipe(rec_obj)
 
-# lend_ranger_fit <-
-#   lend_ranger_wflow |>
-#   fit(data = lend_train)
+lend_ranger_wflow <- 
+  workflow() |>
+  add_model(lend_rand) |>
+  add_recipe(rec_obj)
 
-# predict(lend_ranger_fit, lend_test)
-# 
-# lend_ranger_results <-
-#   bind_cols(predict(lend_ranger_fit, lend_train)) |>
-#   bind_cols(lend_train |>
-#               select(int_rate))
+lend_ranger_fit <-
+  lend_ranger_wflow |>
+  fit(data = lend_train)
+
+lend_ranger_results <-
+  bind_cols(predict(lend_ranger_fit, lend_train)) |>
+  bind_cols(lend_train |>
+              select(int_rate))
+
+predict(lend_ranger_fit, lend_test)
 
 # ggplot(lend_ranger_results, aes(x = int_rate, y = .pred)) +
 #   geom_point(color = "#FA8128",
@@ -158,10 +156,10 @@ lend_rand <- rand_forest(mode = "regression") |>
 #   coord_obs_pred() +
 #   theme_minimal()
 # 
-# rsq(lend_ranger_results, truth = int_rate, estimate = .pred)
+rsq(lend_ranger_results, truth = int_rate, estimate = .pred)
 
-# vip:::vi(lend_ranger_fit) |> 
-#   arrange(desc(Importance))
+vip:::vi(lend_ranger_fit) |>
+  arrange(desc(Importance))
 
 # prep(rec_obj, lend_train) %>% bake(newdata = NULL)
 
@@ -169,7 +167,8 @@ imp_var <- c("term", "installment_pct_inc", "bc_open_to_buy", "installment", "lo
 
 lendingclub_dat_cols_select <- 
   lendingclub_dat_cols |> 
-  select(int_rate, all_of(imp_var))
+  select(int_rate, all_of(imp_var)) |> 
+    mutate(term = trimws(term))
 
 train_test_split_select <- initial_split(lendingclub_dat_cols_select)
 
@@ -203,8 +202,8 @@ v <- vetiver_model(lend_fit_select, "lend_fit")
 
 board <-
   pins::board_connect(auth = "manual",
-                      server = "https://pub.palm.ptd.posit.it/",
-                      key = "vDr7oUh6vusooYyhwWAVOnJgxsjwD37G")
+                      server = Sys.getenv("CONNECT_SERVER"),
+                      key = Sys.getenv("CONNECT_API_KEY"))
 
 library(pins)
 
@@ -213,11 +212,11 @@ board %>% vetiver_pin_write(v)
 library(plumber)
 
 pr() %>%
-  vetiver_api(v)
+  vetiver_api(v) |> 
 
 pins::pin_write(board = board,
-                x = v,
-                name = "isabella.velasquez/lending_model")
+                x = lendingclub_dat_cols,
+                name = "isabella.velasquez/lendingclub_dat_cols")
 
 vetiver_deploy_rsconnect(
   board = board,
