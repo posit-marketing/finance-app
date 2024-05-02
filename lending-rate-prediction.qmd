@@ -1,14 +1,17 @@
 ---
 title: "Predicting lending rates with Databricks and tidymodels"
-format: 
+format:
   html:
     css: styles.css
     code-fold: true
-    code-summary: "Show the code"
+    code-summary: Show the code
 title-block-banner: banner.png
 toc: true
 filters:
   - shinylive
+resource_files:
+  - banner.png
+  - "shinylive-sw.js"
 ---
 
 Machine learning algorithms are reshaping financial decision-making, changing how the industry understands and manages financial risk. By analyzing vast amounts of data, these advanced algorithms deliver predictive insights that drive informed decisions and expedited client service. One example is in the consumer credit market, where accurately predicting lending rates is critical for customer acquisition and retention.
@@ -423,7 +426,7 @@ Access the endpoint URL:
 ```{r}
 #| eval: false
 url <-
-  "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/"
+  "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
 
 endpoint <- vetiver_endpoint(url)
 ```
@@ -451,16 +454,16 @@ predictions_df <- reactive({
     )
   
   url <-
-    "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/predict"
+    "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
   
   endpoint <- vetiver_endpoint(url)
   
-  apiKey = Sys.getenv("CONNECT_API_KEY")
+  api_key = Sys.getenv("CONNECT_API_KEY")
   
   predictions <-
     predict(endpoint,
             pred_tibble,
-            httr::add_headers(Authorization = paste("Key", apiKey)))
+            httr::add_headers(Authorization = paste("Key", api_key)))
   
 })
 ```
@@ -471,11 +474,16 @@ In summary, we've gone on a comprehensive journey to predict lending rates using
 
 Leveraging the power of vetiver, we deployed our model for seamless integration into production environments, such as Shiny apps. This holistic approach can help enhance decision-making processes within the financial domain.
 
+```{r}
+#| include: false
+library(shinylive)
+```
+
 :::{.column-page}
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 400
+#| viewerHeight: 450
 library(shiny)
 library(bslib)
 library(bsicons)
@@ -485,21 +493,21 @@ tidymodels::tidymodels_prefer(quiet = TRUE)
 
 cards <- list(
   card(full_screen = TRUE,
-       card_header("Term of loan:"),
+       card_header(HTML("<br><br>Term of loan:")),
        card_body(
          selectInput(
            inputId = "select_term",
            choices = c("36 months", "60 months"),
            selected = "36 months",
-           label = "Select 36 or 60 months"
+           label = HTML("<br>Select 36 or 60 months:")
          )
        )), 
   card(full_screen = TRUE,
-       card_header("Proportion of monthly income the installment payment represents:"),
+       card_header("Proportion of monthly income represented by the installment payment:"),
        card_body(
          numericInput(
            inputId = "input_installment_pct_inc",
-           label = "Input a number between 0 and 1:",
+           label = HTML("Input a number between<br>0 and 1:"),
            value = 0.07,
            min = 0,
            max = 1,
@@ -507,11 +515,11 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header("Open to buy on revolving bankcards"),
+       card_header(HTML("<br>Open to buy on revolving bankcards:")),
        card_body(
          numericInput(
            inputId = "input_bc_open_to_buy",
-           label = "Input a number between 0 and 500,000:",
+           label = HTML("Input a number between<br>0 and 500,000:"),
            value = 14467,
            min = 0,
            max = 500000,
@@ -519,11 +527,11 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header("Installment payment"),
+       card_header(HTML("<br><br>Installment payment:")),
        card_body(
          numericInput(
            inputId = "input_installment",
-           label = "Input a number between 30 and 2000:",
+           label = HTML("Input a number between<br>30 and 2000:"),
            value = 463,
            min = 30,
            max = 2000,
@@ -531,7 +539,7 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header("Percentage of all bankcard accounts > 75"),
+       card_header(HTML("<br>Percentage of all bankcard accounts > 75")),
        card_body(
          numericInput(
            inputId = "input_percent_bc_gt_75",
@@ -546,7 +554,7 @@ cards <- list(
 
 vbs <- list(
   value_box(
-    title = "Predicted lending rate",
+    title = "Predicted interest rate",
     value = textOutput("pred_int"),
     style = "background-color: #082D46!important; color: #FFFFFF!important",
     showcase = bsicons::bs_icon("bank", size = "0.75em"),
@@ -566,10 +574,10 @@ foot <-
   )
 
 ui <- bslib::page(
-  title = "lending rate prediction app",
+  title = "Interest rate prediction app",
   layout_columns(width = 1/5,
-                 height = 200,
-                 cards[[1]], cards[[2]], cards[[3]], cards[[4]], cards[[5]]),
+                 height =250,
+                 cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
   layout_columns(vbs[[1]]),
   card_footer(foot)
 )
@@ -593,7 +601,7 @@ server <- function(input, output, session) {
       )
     
     url <-
-      "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/predict"
+      "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
     
     endpoint <- vetiver_endpoint(url)
     
@@ -616,3 +624,12 @@ shinyApp(ui, server)
 ```
 
 :::
+
+# Learn more about the Databricks x Posit partnership
+
+We believe our products are better together. Learn more about our partnership.
+
+* Check out the [Databricks x Posit Solutions Page](https://posit.co/solutions/databricks/).
+* View our [co-presented webinar](https://www.youtube.com/watch?v=iShpyDxzMeE) where we talked about improved productivity for your data teams.
+* [Schedule a demo](https://posit.co/schedule-a-call/?booking_calendar__c=Databricks).
+

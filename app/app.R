@@ -53,15 +53,15 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br><br>Loan to income ratio:")),
+       card_header(HTML("<br>Percentage of all bankcard accounts > 75")),
        card_body(
          numericInput(
-           inputId = "input_loan_to_income",
-           label = HTML("Input a number between<br>0 and 2:"),
-           value = 0.21,
+           inputId = "input_percent_bc_gt_75",
+           label = "Input a number between 0 to 100",
+           value = 50,
            min = 0,
-           max = 2,
-           step = 0.1
+           max = 100,
+           step = 5
          )
        ))
 )
@@ -90,7 +90,7 @@ foot <-
 ui <- bslib::page(
   title = "Interest rate prediction app",
   layout_columns(width = 1/5,
-                 height = 200,
+                 height = 300,
                  cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
   layout_columns(vbs[[1]]),
   card_footer(foot)
@@ -103,7 +103,7 @@ server <- function(input, output, session) {
   
   predictions_df <- reactive({
     
-    req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_loan_to_income)
+    req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_percent_bc_gt_75)
     
     pred_tibble <-
       tibble(
@@ -111,11 +111,11 @@ server <- function(input, output, session) {
         installment_pct_inc = input$input_installment_pct_inc,
         bc_open_to_buy = input$input_bc_open_to_buy,
         installment = input$input_installment,
-        loan_to_income = input$input_loan_to_income
+        percent_bc_gt_75 = input$input_percent_bc_gt_75
       )
     
     url <-
-      "https://pub.palm.ptd.posit.it/content/50a4870a-92da-41ec-81cc-8240ae70c9f6/predict"
+      "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
     
     endpoint <- vetiver_endpoint(url)
     
