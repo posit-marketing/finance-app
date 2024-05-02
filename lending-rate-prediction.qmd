@@ -296,7 +296,19 @@ lend_rand <- rand_forest(mode = "regression") |>
 Then, we can pass that model into our workflow and proceed to fit the model:
 
 ```{r}
-#| cache: true
+#| include: false
+board <-
+  pins::board_connect(auth = "manual",
+                      server = Sys.getenv("CONNECT_SERVER"),
+                      key = Sys.getenv("CONNECT_API_KEY"))
+
+lend_ranger_fit <- 
+  pins::pin_read(board = board, 
+                 name = "isabella.velasquez@posit.co/lend_ranger_fit")
+```
+
+```{r}
+#| eval: false
 lend_ranger_wflow <- 
   workflow() |>
   add_model(lend_rand) |>
@@ -308,6 +320,7 @@ lend_ranger_fit <-
 ```
 
 Now, let's recalculate the coefficient of determination:
+
 
 ```{r}
 lend_ranger_results <-
@@ -327,7 +340,7 @@ vip:::vi(lend_ranger_fit) |>
   arrange(desc(Importance))
 ```
 
-According to this analysis, the most important variables are "term", "installment_pct_inc", "bc_open_to_buy", "installment", and "loan_to_income".
+According to this analysis, the most important variables are "term", "installment_pct_inc", "bc_open_to_buy", "installment", and "percent_bc_gt_75".
 
 # Model logging and artifact storage
 
@@ -336,8 +349,8 @@ If we aim to log our model for use in other contexts, like a Shiny app, we can u
 Let's reconstruct our model using only the top five variables of importance:
 
 ```{r}
-#| cache: true
-imp_var <- c("term", "installment_pct_inc", "bc_open_to_buy", "installment", "loan_to_income")
+#| eval: false
+imp_var <- c("term", "installment_pct_inc", "bc_open_to_buy", "installment", "percent_bc_gt_75")
 
 lendingclub_dat_cols_select <- 
   lendingclub_dat_cols |> 
@@ -349,17 +362,17 @@ lend_train_select <- training(train_test_split_select)
 lend_test_select <- testing(train_test_split_select)
 
 rec_obj_select <- recipe(int_rate ~ ., data = lend_train_select) |>
-  step_normalize(c("installment", "installment_pct_inc", "loan_to_income")) |>
+  step_normalize(c("installment", "installment_pct_inc", "percent_bc_gt_75")) |>
   step_impute_mean("bc_open_to_buy") |> 
   step_other()
 
-lend_wflow_select <- 
+lend_select_wflow <- 
   workflow() |>
   add_model(lend_rand) |>
-  add_recipe(rec_obj_select)
+  add_recipe(rec_select_obj)
 
-lend_fit_select <-
-  lend_wflow_select |>
+lend_select_fit <-
+  lend_select_wflow |>
   fit(data = lend_train_select)
 ```
 
@@ -367,7 +380,7 @@ We can create a vetiver object `v` to store the trained model:
 
 ```{r}
 #| eval: false
-v <- vetiver_model(lend_fit_select, "lend_fit")
+v <- vetiver_model(lend_select_fit, "lend_fit")
 ```
 
 We can deploy the model by creating a special Plumber router in R with the plumber package. We add a POST endpoint for making predictions. Following that, we connect to the destination where we intend to store our model artifact. In our case, this would be Posit Connect. Then, we save the vetiver model to a pin for future access.
@@ -388,7 +401,7 @@ Now, we can deploy the model to Posit Connect to generate predictions as needed:
 #| eval: false
 vetiver_deploy_rsconnect(
   board = board,
-  name = "isabella.velasquez/lend_fit",
+  name = "isabella.velasquez@posit.co/lend_fit",
   predict_args = list(debug = TRUE)
 )
 ```
@@ -410,7 +423,7 @@ Access the endpoint URL:
 ```{r}
 #| eval: false
 url <-
-  "https://pub.palm.ptd.posit.it/content/50a4870a-92da-41ec-81cc-8240ae70c9f6/predict"
+  "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/"
 
 endpoint <- vetiver_endpoint(url)
 ```
@@ -425,7 +438,7 @@ predictions_df <- reactive({
     input$input_installment_pct_inc,
     input$input_bc_open_to_buy,
     input$input_installment,
-    input$input_loan_to_income
+    input$percent_bc_gt_75
   )
   
   pred_tibble <-
@@ -434,11 +447,11 @@ predictions_df <- reactive({
       installment_pct_inc = input$input_installment_pct_inc,
       bc_open_to_buy = input$input_bc_open_to_buy,
       installment = input$input_installment,
-      loan_to_income = input$input_loan_to_income
+      percent_bc_gt_75 = input$percent_bc_gt_75
     )
   
   url <-
-    "https://pub.palm.ptd.posit.it/content/50a4870a-92da-41ec-81cc-8240ae70c9f6/predict"
+    "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/predict"
   
   endpoint <- vetiver_endpoint(url)
   
@@ -462,8 +475,6 @@ Leveraging the power of vetiver, we deployed our model for seamless integration 
 
 ```{shinylive-r}
 #| standalone: true
-#| eval: false
-#| echo: false
 #| viewerHeight: 400
 library(shiny)
 library(bslib)
@@ -520,15 +531,15 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header("Loan to income ratio"),
+       card_header("Percentage of all bankcard accounts > 75"),
        card_body(
          numericInput(
-           inputId = "input_loan_to_income",
-           label = "Input a number between 0 to 2",
-           value = 0.21,
+           inputId = "input_percent_bc_gt_75",
+           label = "Input a number between 0 to 100",
+           value = 50,
            min = 0,
-           max = 2,
-           step = 0.1
+           max = 100,
+           step = 5
          )
        ))
 )
@@ -570,7 +581,7 @@ server <- function(input, output, session) {
   
   predictions_df <- reactive({
     
-    req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_loan_to_income)
+    req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_percent_bc_gt_75)
     
     pred_tibble <-
       tibble(
@@ -578,11 +589,11 @@ server <- function(input, output, session) {
         installment_pct_inc = input$input_installment_pct_inc,
         bc_open_to_buy = input$input_bc_open_to_buy,
         installment = input$input_installment,
-        loan_to_income = input$input_loan_to_income
+        percent_bc_gt_75 = input$input_percent_bc_gt_75
       )
     
     url <-
-      "https://pub.palm.ptd.posit.it/content/50a4870a-92da-41ec-81cc-8240ae70c9f6/predict"
+      "https://pub.demo.posit.team/public/lend-fit-vetiver-pin/predict"
     
     endpoint <- vetiver_endpoint(url)
     
