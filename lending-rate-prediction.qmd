@@ -14,13 +14,13 @@ resource_files:
   - "shinylive-sw.js"
 ---
 
-Machine learning algorithms are reshaping financial decision-making, changing how the industry understands and manages financial risk. By analyzing vast amounts of data, these advanced algorithms deliver predictive insights that drive informed decisions and expedited client service. One example is in the consumer credit market, where accurately predicting lending rates is critical for customer acquisition and retention.
+Machine learning algorithms are reshaping financial decision-making, changing how the industry understands and manages financial risk. By analyzing vast amounts of data, these advanced algorithms deliver predictive insights that drive informed decisions and expedite client service. One example is in the consumer credit market, where accurately predicting lending rates is critical for customer acquisition and retention.
 
-Through historical application analysis, machine learning enables the capability to offer potential clients personalized lending rates, quickly. This mitigates the chance of losing the customers to faster alternatives while minimizing loan-associated risks. Efficient but thorough application processing allows you to maintain a competitive edge in the market.
+By analyzing historical data, machine learning enables the capability to offer potential clients personalized lending rates, quickly. This mitigates the chance of losing the customers to faster alternatives while minimizing loan-associated risks. Efficient but thorough application processing allows you to maintain a competitive edge in the market.
 
-Financial analysts using Databricks can harness its performance and robust data governance capabilities, particularly when working with common datasets stored in Delta Lake. Analysts can use [ODBC](https://odbc.r-dbi.org/) to link with a SQL warehouse or employ [sparklyr](https://spark.posit.co/deployment/databricks-connect.html) to interface with a Databricks cluster.
+Financial analysts using Databricks can harness its performance and robust data governance capabilities, particularly when working with common datasets stored in Delta Lake. Analysts can use [ODBC](https://odbc.r-dbi.org/) to link with a SQL warehouse or [sparklyr](https://spark.posit.co/deployment/databricks-connect.html) to interface with a Databricks cluster.
 
-Once the data is accessible, the [tidymodels framework of packages](https://www.tidymodels.org/) offer modeling and machine learning capabilities. With Posit professional tools, analysts can use these tools in managed environments with their preferred IDEs and schedule, share, and scale their models. Analysts can seamlessly combine the data governance strengths of Databricks with the powerful tools offered by Posit, making their work more productive and streamlined.
+Once the data is accessible, the [tidymodels framework of packages](https://www.tidymodels.org/) offer modeling and machine learning capabilities. Analysts can use these tools in managed environments with their preferred IDE in [Posit Workbench](https://posit.co/products/enterprise/workbench/) and schedule, share, and scale their models in [Posit Connect](https://posit.co/products/enterprise/connect/). The integration of tools combines the data governance strengths of Databricks with the powerful tools offered by Posit, making their work more productive and streamlined.
 
 In this article, we will use publicly accessible loan applicant data from LendingClub to create a machine learning model.^[Thank you to James Andersen for the blog post Predicting Lending Rates: An Intro to AWS Machine Learning that served as a starting off point for this post.] Our goal is to develop a personalized lending rate prediction model tailored to individual criteria.
 
@@ -489,7 +489,6 @@ library(bslib)
 library(bsicons)
 library(dplyr)
 library(vetiver)
-tidymodels::tidymodels_prefer(quiet = TRUE)
 
 cards <- list(
   card(full_screen = TRUE,
@@ -499,7 +498,7 @@ cards <- list(
            inputId = "select_term",
            choices = c("36 months", "60 months"),
            selected = "36 months",
-           label = HTML("<br>Select 36 or 60 months:")
+           label = HTML("<br><br>Select 36 or 60 months:")
          )
        )), 
   card(full_screen = TRUE,
@@ -539,11 +538,11 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br>Percentage of all bankcard accounts > 75")),
+       card_header(HTML("<br>Percentage of all bankcard accounts > 75:")),
        card_body(
          numericInput(
            inputId = "input_percent_bc_gt_75",
-           label = "Input a number between 0 to 100",
+           label = HTML("Input a number between<br>0 to 100:"),
            value = 50,
            min = 0,
            max = 100,
@@ -577,7 +576,7 @@ ui <- bslib::page(
   title = "Interest rate prediction app",
   layout_columns(width = 1/5,
                  height =250,
-                 cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
+                 cards[[2]], cards[[3]], cards[[5]], cards[[4]], cards[[1]]),
   layout_columns(vbs[[1]]),
   card_footer(foot)
 )
@@ -632,4 +631,3 @@ We believe our products are better together. Learn more about our partnership.
 * Check out the [Databricks x Posit Solutions Page](https://posit.co/solutions/databricks/).
 * View our [co-presented webinar](https://www.youtube.com/watch?v=iShpyDxzMeE) where we talked about improved productivity for your data teams.
 * [Schedule a demo](https://posit.co/schedule-a-call/?booking_calendar__c=Databricks).
-
