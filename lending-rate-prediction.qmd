@@ -5,6 +5,16 @@ format:
     css: styles.css
     code-fold: true
     code-summary: Show the code
+    code-links:
+      - repo
+      - text: "Model pin"
+        icon: pin
+        target: blank
+        href: https://pub.demo.posit.team/public/lend-fit-model-pin/
+      - text: "Vetiver API"
+        icon: arrow-left-right
+        target: blank
+        href: https://pub.demo.posit.team/public/lend-fit-vetiver-api/
 title-block-banner: banner.png
 toc: true
 filters:
