@@ -15,13 +15,16 @@ format:
         icon: arrow-left-right
         target: blank
         href: https://pub.demo.posit.team/public/lend-fit-vetiver-api/
+      - text: "Shiny app"
+        icon: window
+        target: blank
+        href: https://pub.demo.posit.team/public/lend-rate-prediction-app/
 title-block-banner: banner.png
 toc: true
 filters:
   - shinylive
 resource_files:
   - banner.png
-  - "shinylive-sw.js"
 ---
 
 Machine learning algorithms are reshaping financial decision-making, changing how the industry understands and manages financial risk. By analyzing vast amounts of data, these advanced algorithms deliver predictive insights that drive informed decisions and expedite client service. One example is in the consumer credit market, where accurately predicting lending rates is critical for customer acquisition and retention.
@@ -30,13 +33,13 @@ By analyzing historical data, machine learning enables the capability to offer p
 
 Financial analysts using Databricks can harness its performance and robust data governance capabilities, particularly when working with common datasets stored in Delta Lake. Analysts can use [ODBC](https://odbc.r-dbi.org/) to link with a SQL warehouse or [sparklyr](https://spark.posit.co/deployment/databricks-connect.html) to interface with a Databricks cluster.
 
-Once the data is accessible, the [tidymodels framework of packages](https://www.tidymodels.org/) offer modeling and machine learning capabilities. Analysts can use these tools in managed environments with their preferred IDE in [Posit Workbench](https://posit.co/products/enterprise/workbench/) and schedule, share, and scale their models in [Posit Connect](https://posit.co/products/enterprise/connect/). The integration of tools combines the data governance strengths of Databricks with the powerful tools offered by Posit, making their work more productive and streamlined.
+Once the data is accessible, the [tidymodels framework of packages](https://www.tidymodels.org/) offer modeling and machine learning capabilities. Analysts can use these tools in managed environments with their preferred IDE in [Posit Workbench](https://posit.co/products/enterprise/workbench/) and deploy and share their models on [Posit Connect](https://posit.co/products/enterprise/connect/). The integration of tools combines the data governance strengths of Databricks with the powerful tools offered by Posit, making their work more productive and streamlined.
 
-In this article, we will use publicly accessible loan applicant data from LendingClub to create a machine learning model.^[Thank you to James Andersen for the blog post Predicting Lending Rates: An Intro to AWS Machine Learning that served as a starting off point for this post.] Our goal is to develop a personalized lending rate prediction model tailored to individual criteria.
+In this article, we will use publicly accessible loan applicant data from [LendingClub](https://www.lendingclub.com/) to create a machine learning model.^[Thank you to James Andersen for the blog post Predicting Lending Rates: An Intro to AWS Machine Learning that served as a starting off point for this post.] Our goal is to develop a personalized lending rate prediction model tailored to individual criteria.
 
 ## Databricks Delta Lake connection to RStudio
 
-For those with access to Databricks, create the table in your catalog by running the below:
+For those with access to Databricks, add the table to your catalog by running the below:
 
 ```sql
 CREATE TABLE lending_club USING com.databricks.spark.csv OPTIONS(path 'dbfs:/databricks-datasets/lending-club-loan-stats/LoanStats_2018Q2.csv', header "true");
@@ -261,7 +264,7 @@ all_vars <- c(
 )
 ```
 
-Next, we proceed to select only the relevant columns for our model and remove any missing values in our `int_rate` variable:
+Next, we proceed to select only the relevant columns for our model and remove any missing values in our `int_rate` variable.
 
 ```{r}
 #| label: create-model-dataset
@@ -275,6 +278,7 @@ To ensure our dataset is free of any missing values, we can run the below:
 
 ```{r}
 #| label: check-nas
+#| code-fold: false
 colSums(is.na(lendingclub_dat_cols))
 ```
 
@@ -282,6 +286,7 @@ We can ensure that no factor columns have fewer than two factors by running the 
 
 ```{r}
 #| label: check-factors
+#| code-fold: false
 lendingclub_dat_cols |>
   select(where(is.factor)) |>
   select(where(~ nlevels(.) < 2))
@@ -358,14 +363,16 @@ lend_linear_results <-
 rsq(lend_linear_results, truth = int_rate, estimate = .pred)
 ```
 
-However, one of the advantages of tidymodels is the ability to quickly pivot with the steps we've already executed. Instead of a linear model, we can now define a random forest model:
+However, one of the advantages of tidymodels is the ability to quickly pivot with the steps we've already executed. Instead of a linear model, we can now define a random forest model.
 
 ```{r}
 lend_rand <- rand_forest(mode = "regression") |>
   set_engine("ranger", importance = "permutation")
 ```
 
-Then, we can pass that model into our workflow and proceed to fit the model:
+Then, we can pass that model into our workflow and proceed to fit the model.
+
+<!---The random forest model takes several minutes to run. To expedite document rendering, I've saved the model in a pin and called it from the chunk below. -->
 
 ```{r}
 #| include: false
@@ -395,7 +402,7 @@ lend_ranger_fit <-
   fit(data = lend_train)
 ```
 
-Now, let's recalculate the coefficient of determination:
+Recalculating the coefficient of determination, we get:
 
 
 ```{r}
@@ -421,7 +428,7 @@ According to this analysis, the most important variables are "term", "installmen
 
 If we aim to log our model for use in other contexts, like a Shiny app, we can utilize the [vetiver package]. This tool facilitates deploying and maintaining machine learning models in production, allowing us to store models in a pin for convenient access and reference.
 
-Let's reconstruct our model using only the top five variables of importance:
+Let's reconstruct our model using only the top five variables of importance.
 
 ```{r}
 #| eval: false
@@ -451,7 +458,7 @@ lend_select_fit <-
   fit(data = lend_train_select)
 ```
 
-We can create a vetiver object `v` to store the trained model:
+We can create a vetiver object `v` to store the trained model.
 
 ```{r}
 #| eval: false
@@ -471,7 +478,7 @@ board <- pins::board_connect(
 board |> vetiver_pin_write(v)
 ```
 
-Now, we can deploy the model to Posit Connect to generate predictions as needed:
+Now, we can deploy the model to Posit Connect to generate predictions as needed.
 
 ```{r}
 #| eval: false
@@ -490,15 +497,17 @@ Since our model is pinned in an API, it can be retrieved by other applications, 
 
 ```{r}
 #| eval: false
+#| code-fold: false
 board <- pins::board_connect(
   server = Sys.getenv("CONNECT_SERVER"),
   key = Sys.getenv("CONNECT_API_KEY")
 )
 ```
 
-Access the endpoint URL:
+Access the endpoint URL with `vetiver_endpoint()`:
 
 ```{r}
+#| code-fold: false
 #| eval: false
 url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
 
@@ -509,6 +518,7 @@ Also in the server portion of the Shiny app, establish a reactive variable (name
 
 ```{r}
 #| eval: false
+#| code-fold: false
 predictions_df <- reactive({
   req(
     input$select_term,
@@ -541,97 +551,76 @@ predictions_df <- reactive({
 })
 ```
 
-Below is our Shiny app for predicting lending rates. Each time you select an input, it calculates the rate based on our random forest model. This app is embedded in a [Quarto document](https://quarto.org/) using [ShinyLive](https://posit-dev.github.io/r-shinylive/) and the [Quarto ShinyLive extension](https://github.com/coatless-quarto/r-shinylive-demo). The design and layout of the Shiny app is developed with [bslib](https://rstudio.github.io/bslib/).
-
-In summary, we've gone on a comprehensive journey to predict lending rates using machine learning techniques within the context of financial analysis. We began by accessing our data from Databricks, cleaning our data, and using tidymodels for modeling and evaluation. We developed two predictive models, evaluated their performance, and identified key variables driving interest rate predictions.
-
-Leveraging the power of vetiver, we deployed our model for seamless integration into production environments, such as Shiny apps. This holistic approach can help enhance decision-making processes within the financial domain.
+Below is our Shiny app for predicting lending rates. Each time you select an input, it calculates the rate based on our random forest model. The design and layout of the Shiny app is developed with [bslib](https://rstudio.github.io/bslib/).
 
 ```{r}
-#| include: false
-library(shinylive)
-```
-
-:::{.column-page}
-
-```{shinylive-r}
-#| standalone: true
-#| viewerHeight: 450
+#| eval: false
 library(shiny)
 library(bslib)
 library(bsicons)
 library(dplyr)
 library(vetiver)
+tidymodels::tidymodels_prefer(quiet = TRUE)
 
 cards <- list(
-  card(
-    full_screen = TRUE,
-    card_header(HTML("<br><br>Term of loan:")),
-    card_body(
-      selectInput(
-        inputId = "select_term",
-        choices = c("36 months", "60 months"),
-        selected = "36 months",
-        label = HTML("<br><br>Select 36 or 60 months:")
-      )
-    )
-  ),
-  card(
-    full_screen = TRUE,
-    card_header("Proportion of monthly income represented by the installment payment:"),
-    card_body(
-      numericInput(
-        inputId = "input_installment_pct_inc",
-        label = HTML("Input a number between<br>0 and 1:"),
-        value = 0.07,
-        min = 0,
-        max = 1,
-        step = 0.01
-      )
-    )
-  ),
-  card(
-    full_screen = TRUE,
-    card_header(HTML("<br>Open to buy on revolving bankcards:")),
-    card_body(
-      numericInput(
-        inputId = "input_bc_open_to_buy",
-        label = HTML("Input a number between<br>0 and 500,000:"),
-        value = 14467,
-        min = 0,
-        max = 500000,
-        step = 1000
-      )
-    )
-  ),
-  card(
-    full_screen = TRUE,
-    card_header(HTML("<br><br>Installment payment:")),
-    card_body(
-      numericInput(
-        inputId = "input_installment",
-        label = HTML("Input a number between<br>30 and 2000:"),
-        value = 463,
-        min = 30,
-        max = 2000,
-        step = 100
-      )
-    )
-  ),
-  card(
-    full_screen = TRUE,
-    card_header(HTML("<br>Percentage of all bankcard accounts > 75:")),
-    card_body(
-      numericInput(
-        inputId = "input_percent_bc_gt_75",
-        label = HTML("Input a number between<br>0 to 100:"),
-        value = 50,
-        min = 0,
-        max = 100,
-        step = 5
-      )
-    )
-  )
+  card(full_screen = TRUE,
+       card_header(HTML("<br><br><br>Term of loan:")),
+       card_body(
+         selectInput(
+           inputId = "select_term",
+           choices = c("36 months", "60 months"),
+           selected = "36 months",
+           label = HTML("<br>Select 36 or 60 months:")
+         )
+       )), 
+  card(full_screen = TRUE,
+       card_header("Proportion of monthly income represented by the installment payment:"),
+       card_body(
+         numericInput(
+           inputId = "input_installment_pct_inc",
+           label = HTML("Input a number between<br>0 and 1:"),
+           value = 0.07,
+           min = 0,
+           max = 1,
+           step = 0.01
+         )
+       )),
+  card(full_screen = TRUE,
+       card_header(HTML("<br><br>Open to buy on revolving bankcards:")),
+       card_body(
+         numericInput(
+           inputId = "input_bc_open_to_buy",
+           label = HTML("Input a number between<br>0 and 500,000:"),
+           value = 14467,
+           min = 0,
+           max = 500000,
+           step = 1000
+         )
+       )),
+  card(full_screen = TRUE,
+       card_header(HTML("<br><br><br>Installment payment:")),
+       card_body(
+         numericInput(
+           inputId = "input_installment",
+           label = HTML("Input a number between<br>30 and 2000:"),
+           value = 463,
+           min = 30,
+           max = 2000,
+           step = 100
+         )
+       )),
+  card(full_screen = TRUE,
+       card_header(HTML("<br><br>Percentage of all bankcard accounts > 75")),
+       card_body(
+         numericInput(
+           inputId = "input_percent_bc_gt_75",
+           label = HTML("<br>Input a number<br>between 0 and 100:"),
+           value = 50,
+           min = 0,
+           max = 100,
+           step = 5
+         )
+       ))
 )
 
 vbs <- list(
@@ -657,24 +646,22 @@ foot <-
 
 ui <- bslib::page(
   title = "Interest rate prediction app",
-  layout_columns(
-    width = 1 / 5,
-    height = 250,
-    cards[[2]], cards[[3]], cards[[5]], cards[[4]], cards[[1]]
-  ),
+  layout_columns(width = 1/5,
+                 height = 275,
+                 cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
   layout_columns(vbs[[1]]),
   card_footer(foot)
 )
 
 server <- function(input, output, session) {
-  board <- pins::board_connect(
-    server = Sys.getenv("CONNECT_SERVER"),
-    key = Sys.getenv("CONNECT_API_KEY")
-  )
-
+  
+  board <- pins::board_connect(server = Sys.getenv("CONNECT_SERVER"),
+                               key = Sys.getenv("CONNECT_API_KEY"))
+  
   predictions_df <- reactive({
+    
     req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_percent_bc_gt_75)
-
+    
     pred_tibble <-
       tibble(
         term = input$select_term,
@@ -683,36 +670,45 @@ server <- function(input, output, session) {
         installment = input$input_installment,
         percent_bc_gt_75 = input$input_percent_bc_gt_75
       )
-
+    
     url <-
       "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
-
+    
     endpoint <- vetiver_endpoint(url)
-
-    apiKey <- Sys.getenv("CONNECT_API_KEY")
-
+    
+    apiKey = Sys.getenv("CONNECT_API_KEY")
+    
     predictions <-
-      predict(
-        endpoint,
-        pred_tibble,
-        httr::add_headers(Authorization = paste("Key", apiKey))
-      )
+      predict(endpoint,
+              pred_tibble,
+              httr::add_headers(Authorization = paste("Key", apiKey)))
+    
   })
-
+  
   output$pred_int <- renderText({
     predictions_df()$.pred
   })
+  
 }
 
 shinyApp(ui, server)
 ```
 
+
+:::{.column-page}
+
+<iframe src="https://pub.demo.posit.team/public/lend-rate-prediction-app/" width="100%" height="500px"></iframe>
+
 :::
+
+In summary, we've gone on a comprehensive journey to predict lending rates using machine learning techniques within the context of financial analysis. We began by accessing our data from Databricks, cleaning our data, and using tidymodels for modeling and evaluation. We developed two predictive models, evaluated their performance, and identified key variables driving interest rate predictions.
+
+Leveraging the power of vetiver, we deployed our model for seamless integration into production environments, such as Shiny apps. This holistic approach can help enhance decision-making processes within the financial domain.
 
 # Learn more about the Databricks x Posit partnership
 
 We believe our products are better together. Learn more about our partnership.
 
-* Check out the [Databricks x Posit Solutions Page](https://posit.co/solutions/databricks/).
+* Visit the [Databricks x Posit Solutions Page](https://posit.co/solutions/databricks/).
 * View our [co-presented webinar](https://www.youtube.com/watch?v=iShpyDxzMeE) where we talked about improved productivity for your data teams.
 * [Schedule a demo](https://posit.co/schedule-a-call/?booking_calendar__c=Databricks).

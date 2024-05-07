@@ -7,7 +7,7 @@ tidymodels::tidymodels_prefer(quiet = TRUE)
 
 cards <- list(
   card(full_screen = TRUE,
-       card_header(HTML("<br><br>Term of loan:")),
+       card_header(HTML("<br><br><br>Term of loan:")),
        card_body(
          selectInput(
            inputId = "select_term",
@@ -29,7 +29,7 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br>Open to buy on revolving bankcards:")),
+       card_header(HTML("<br><br>Open to buy on revolving bankcards:")),
        card_body(
          numericInput(
            inputId = "input_bc_open_to_buy",
@@ -41,7 +41,7 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br><br>Installment payment:")),
+       card_header(HTML("<br><br><br>Installment payment:")),
        card_body(
          numericInput(
            inputId = "input_installment",
@@ -53,11 +53,11 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br>Percentage of all bankcard accounts > 75")),
+       card_header(HTML("<br><br>Percentage of all bankcard accounts > 75")),
        card_body(
          numericInput(
            inputId = "input_percent_bc_gt_75",
-           label = "Input a number between 0 to 100",
+           label = HTML("<br>Input a number<br>between 0 and 100:"),
            value = 50,
            min = 0,
            max = 100,
@@ -90,7 +90,7 @@ foot <-
 ui <- bslib::page(
   title = "Interest rate prediction app",
   layout_columns(width = 1/5,
-                 height = 300,
+                 height = 275,
                  cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
   layout_columns(vbs[[1]]),
   card_footer(foot)
