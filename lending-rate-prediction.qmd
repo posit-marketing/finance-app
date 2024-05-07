@@ -50,6 +50,8 @@ Let's start by loading the packages that will be integral to our workflow.
 # Wrangling packages
 library(dplyr)
 library(tidyr)
+library(lubridate)
+library(stringr)
 
 # Visualization packages
 library(dbplot)
@@ -69,27 +71,31 @@ library(plumber)
 library(vetiver)
 ```
 
-As previously mentioned, analysts have several options for accessing Databricks data. In this walkthrough, we'll demonstrate connectivity using the [odbc package](https://odbc.r-dbi.org/). The Posit Solutions site provides detailed guidance on using the new [odbc `databricks()` function](https://solutions.posit.co/connections/db/databases/databricks/index.html#using-the-new-odbcdatabricks-function). Essentially, we need to store a Databricks token and host URL in our R environment. The function itself requires only the HTTP path to the SQL warehouse.
+As previously mentioned, analysts have several options for accessing Databricks data. In this walk-through, we'll demonstrate connectivity using the [odbc package](https://odbc.r-dbi.org/). The Posit Solutions site provides detailed guidance on using the new [odbc `databricks()` function](https://solutions.posit.co/connections/db/databases/databricks/index.html#using-the-new-odbcdatabricks-function). Essentially, we need to store a Databricks token and host URL in our R environment. The function itself requires only the HTTP path to the SQL warehouse.
 
 ```{r}
 #| label: odbc-connection
-con <-
-  DBI::dbConnect(odbc::databricks(),
-                 httpPath = Sys.getenv("HTTP_PATH"))
+con <- DBI::dbConnect(
+  odbc::databricks(),
+  httpPath = Sys.getenv("HTTP_PATH")
+)
 ```
 
 This code snippet establishes a connection using the `con` object. Subsequently, we can use dplyr and dbplyr to navigate to our table. We retrieve the `lendingclub` table using `tbl()` and store it in an object named `lendingclub_dat`.
 
 ```{r}
 #| label: get-tbl-data
-lendingclub_dat <- 
-  dplyr::tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) 
+lendingclub_dat <- tbl(
+  con,
+  dbplyr::in_catalog("hive_metastore", "default", "lendingclub")
+)
 ```
 
 We can use the [dbplot package](https://edgararuiz.github.io/dbplot/) to generate a ggplot without transferring the data into R. This visualization displays the distribution of the variable we aim to predict, lending rate. Loan amounts are plotted on the x-axis, while the frequency of loans at each amount is depicted on the y-axis. It's shown that the majority of loans have an lending rate of less than 20%.
 
 ```{r}
 #| label: dbplot-int-rate
+#| fig-asp: 0.618
 #| warning: false
 lendingclub_dat |>
   mutate(int_rate = as.numeric(REGEXP_REPLACE(int_rate, "%", ""))) |>
@@ -101,9 +107,11 @@ lendingclub_dat |>
     color = "#1B909E",
     alpha = 0.4
   ) +
-labs(title = "Distribution of lending rate",
-     x = "lending rate",
-     y = "Count") +
+  labs(
+    title = "Distribution of lending rate",
+    x = "Lending rate",
+    y = "Count"
+  ) +
   theme_minimal()
 ```
 
@@ -115,40 +123,47 @@ Certain columns are imported as characters instead of their intended numeric typ
 
 ```{r}
 #| label: pre-collect-data-clean
-lendingclub_dat <- 
-  dplyr::tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |> 
+lendingclub_dat <- tbl(
+  con,
+  dbplyr::in_catalog("hive_metastore", "default", "lendingclub")
+) |>
   mutate(
-    # Convert these columns into numeric
-    across(c(starts_with("annual"), starts_with("dti"), starts_with("inq"),  starts_with("mo"), starts_with("mths"), starts_with("num"), starts_with("open"), starts_with("percent"), starts_with("pct"), starts_with("revol"), starts_with("tot"), "all_util", "il_util", "tax_liens",  "loan_amnt", "installment", "pub_rec_bankruptcies", "num_tl_120dpd_2m", "bc_util", "max_bal_bc", "bc_open_to_buy", "acc_open_past_24mths", "avg_cur_bal", "delinq_2yrs", "pub_rec"), ~ as.numeric(.)),
-    # Calculate a loan to income statistic
-    loan_to_income = case_when(
-      application_type == "Individual" ~ loan_amnt / annual_inc,
-      .default = loan_amnt / annual_inc_joint
+    # Convert columns into numeric
+    across(
+      c(
+        starts_with("annual"), starts_with("dti"), starts_with("inq"), starts_with("mo"), starts_with("mths"), starts_with("num"), starts_with("open"), starts_with("percent"), starts_with("pct"), starts_with("revol"), starts_with("tot"), "all_util", "il_util", "tax_liens", "loan_amnt", "installment", "pub_rec_bankruptcies", "num_tl_120dpd_2m", "bc_util", "max_bal_bc", "bc_open_to_buy", "acc_open_past_24mths", "avg_cur_bal", "delinq_2yrs", "pub_rec"
+      ),
+      ~ as.numeric(.)
     ),
-    # Calculate a loan to income statistic
-    loan_to_income = case_when(
-      application_type == "Individual" ~ loan_amnt / annual_inc,
-      .default = loan_amnt / annual_inc_joint
+    # Calculate loan to income statistic
+    loan_to_income = if_else(
+      application_type == "Individual",
+      loan_amnt / annual_inc,
+      loan_amnt / annual_inc_joint
     ),
-    # Calculate the percentage of monthly income the installment payment represents
-    installment_pct_inc = case_when(
-      application_type == "Individual" ~ installment / (annual_inc / 12),
-      .default = installment / (annual_inc_joint / 12)
+    # Calculate percentage of monthly income the installment payment represents
+    installment_pct_inc = if_else(
+      application_type == "Individual",
+      installment / (annual_inc / 12),
+      installment / (annual_inc_joint / 12)
     ),
-    # Calculate the percentage of monthly income the installment payment represents
-    adjusted_dti = case_when(
-      application_type == "Individual" ~ (loan_amnt + tot_cur_bal) / (annual_inc),
-      .default = (loan_amnt + tot_cur_bal) / (annual_inc_joint)
+    # Calculate percentage of monthly income the installment payment represents
+    adjusted_dti = if_else(
+      application_type == "Individual",
+      (loan_amnt + tot_cur_bal) / (annual_inc),
+      (loan_amnt + tot_cur_bal) / (annual_inc_joint)
     ),
     #  Calculate utilization on installment accounts excluding mortgage balance
-    il_util_ex_mort = case_when(
-      total_il_high_credit_limit > 0 ~ total_bal_ex_mort / total_il_high_credit_limit,
-      .default = 0
+    il_util_ex_mort = if_else(
+      total_il_high_credit_limit > 0,
+      total_bal_ex_mort / total_il_high_credit_limit,
+      0
     ),
     # Fill debt to income joint with individual debt to income where missing
     dti_joint = coalesce(dti_joint, dti),
     # Fill annual income joint with individual annual income where missing
-    annual_inc_joint = coalesce(annual_inc_joint, annual_inc)) |> 
+    annual_inc_joint = coalesce(annual_inc_joint, annual_inc)
+  ) |>
   collect()
 ```
 
@@ -156,49 +171,94 @@ Although we ran these steps before `collect()`, once we have our data frame in R
 
 ```{r}
 #| label: post-collect-data-clean
-lendingclub_dat_clean <-
-  lendingclub_dat |>
+lendingclub_dat_clean <- lendingclub_dat |>
   mutate(
     # Missing values for these columns seem most appropriate to fill with zero
-    across(c("inq_fi", "dti", "all_util", "percent_bc_gt_75", "il_util", "avg_cur_bal","all_util", "il_util", "inq_last_6mths", "inq_last_12m", "num_tl_120dpd_2m", "open_il_12m", "open_il_24m", "open_rv_12m", "open_rv_24m"), ~ replace_na(., 0)),
-    # Missing values for these columns seem most appropriate to fill with the column max
-    across(c("mo_sin_old_il_acct", "mths_since_last_major_derog", "mths_since_last_delinq", "mths_since_recent_bc", "mths_since_last_record", "mths_since_rcnt_il", "mths_since_recent_bc", "mths_since_recent_bc_dlq", "mths_since_recent_inq", "mths_since_recent_revol_delinq", "mths_since_recent_revol_delinq"),  ~ replace_na(., max(., na.rm = TRUE))),
+    across(
+      c(
+        "inq_fi", "dti", "all_util", "percent_bc_gt_75", "il_util", "avg_cur_bal", "all_util", "il_util", "inq_last_6mths", "inq_last_12m", "num_tl_120dpd_2m", "open_il_12m", "open_il_24m", "open_rv_12m", "open_rv_24m"
+      ),
+      ~ replace_na(., 0)
+    ),
+    # Missing values for these columns seem most appropriate to fill with column max
+    across(
+      c(
+        "mo_sin_old_il_acct", "mths_since_last_major_derog", "mths_since_last_delinq", "mths_since_recent_bc", "mths_since_last_record", "mths_since_rcnt_il", "mths_since_recent_bc", "mths_since_recent_bc_dlq", "mths_since_recent_inq", "mths_since_recent_revol_delinq", "mths_since_recent_revol_delinq"
+      ),
+      ~ replace_na(., max(., na.rm = TRUE))
+    ),
     # Remove percent sign
-    int_rate = as.numeric(stringr::str_remove(int_rate, "%")),
+    int_rate = as.numeric(str_remove(int_rate, "%")),
     # Remove percent sign
-    revol_util = as.numeric(stringr::str_remove(revol_util, "%")),
+    revol_util = as.numeric(str_remove(revol_util, "%")),
     # Create variable for earliest line of credit
-    earliest_cr_line = lubridate::parse_date_time2(paste("01", earliest_cr_line, sep = "-"), "dmy", cutoff_2000 = 50L),
+    earliest_cr_line = parse_date_time2(
+      paste("01", earliest_cr_line, sep = "-"), "dmy",
+      cutoff_2000 = 50L
+    ),
     # Calculate time since earliest line of credit
-    age_earliest_cr = lubridate::interval(as.Date(earliest_cr_line), as.Date(lubridate::today())) %/% lubridate::days(1),
+    age_earliest_cr = interval(
+      as.Date(earliest_cr_line),
+      as.Date(today())
+    ) %/% days(1),
     # Convert characters to factors
     across(where(is.character), .fns = as.factor),
-    term = trimws(term))
+    term = trimws(term)
+  )
 ```
 
 With our data cleaned up, it's time to examine the variables we intend to include in the model. We create vectors for conveniently referencing variable categories later if necessary. Then, we compile all the desired columns into one vector named `all_vars` for use in our model.
 
 ```{r}
 #| label: create-variable-vectors
-applicant_numeric <- 
-  c("annual_inc","dti","age_earliest_cr","loan_amnt", "installment")
-applicant_text <- 
-  c("emp_title","title")
-applicant_categorical <- 
-  c("application_type", "emp_length", "term")
-credit_numeric <- 
-  c("acc_open_past_24mths","avg_cur_bal","bc_open_to_buy","bc_util","delinq_2yrs","open_acc","pub_rec","revol_bal","tot_coll_amt","tot_cur_bal","total_acc","total_rev_hi_lim","num_accts_ever_120_pd","num_actv_bc_tl","num_actv_rev_tl","num_bc_sats","num_bc_tl","num_il_tl", "num_rev_tl_bal_gt_0","pct_tl_nvr_dlq","percent_bc_gt_75","tot_hi_cred_lim","total_bal_ex_mort","total_bc_limit","total_il_high_credit_limit","total_rev_hi_lim","all_util", "loan_to_income", "installment_pct_inc","il_util","il_util_ex_mort","total_bal_il","total_cu_tl")
-NUMERIC_VARS_QB_20  <- 
-  c("inq_last_6mths","mo_sin_old_il_acct", "mo_sin_old_rev_tl_op", "mo_sin_old_rev_tl_op", "mo_sin_rcnt_tl", "mort_acc", "num_op_rev_tl", "num_rev_accts", "num_sats", "pub_rec", "pub_rec_bankruptcies", "tax_liens", "all_util", "loan_to_income")
-NUMERIC_VARS_QB_5 <- 
-  c("num_tl_120dpd_2m")
-NUMERIC_VARS_QB_10 <- 
-  c("mths_since_last_delinq","mths_since_last_major_derog","mths_since_last_record","mths_since_rcnt_il","mths_since_recent_bc","mths_since_recent_bc_dlq","mths_since_recent_inq","mths_since_recent_revol_delinq", "num_tl_90g_dpd_24m","num_tl_op_past_12m")
-NUMERIC_VARS_QB_50 <- 
-  c("installment","bc_open_to_buy","loan_amnt","total_bc_limit","percent_bc_gt_75")
-mean_impute_vals <- c("bc_util", "num_rev_accts", "bc_open_to_buy", "percent_bc_gt_75", "total_bal_il", "total_il_high_credit_limit", "total_cu_tl")
+applicant_numeric <- c(
+  "annual_inc", "dti", "age_earliest_cr", "loan_amnt", "installment"
+  )
 
-all_vars <- c(applicant_numeric, applicant_categorical, credit_numeric, NUMERIC_VARS_QB_20, NUMERIC_VARS_QB_5, NUMERIC_VARS_QB_10, NUMERIC_VARS_QB_50)
+applicant_text <- c("emp_title", "title")
+
+applicant_categorical <- c("application_type", "emp_length", "term")
+
+credit_numeric <- c(
+  "acc_open_past_24mths", "avg_cur_bal", "bc_open_to_buy", "bc_util", 
+  "delinq_2yrs", "open_acc", "pub_rec", "revol_bal", "tot_coll_amt", 
+  "tot_cur_bal", "total_acc", "total_rev_hi_lim", "num_accts_ever_120_pd", 
+  "num_actv_bc_tl", "num_actv_rev_tl", "num_bc_sats", "num_bc_tl", "num_il_tl", 
+  "num_rev_tl_bal_gt_0", "pct_tl_nvr_dlq", "percent_bc_gt_75", "tot_hi_cred_lim", 
+  "total_bal_ex_mort", "total_bc_limit", "total_il_high_credit_limit", 
+  "total_rev_hi_lim", "all_util", "loan_to_income", "installment_pct_inc", 
+  "il_util", "il_util_ex_mort", "total_bal_il", "total_cu_tl"
+  )
+
+NUMERIC_VARS_QB_20 <- c(
+  "inq_last_6mths", "mo_sin_old_il_acct", "mo_sin_old_rev_tl_op", 
+  "mo_sin_old_rev_tl_op", "mo_sin_rcnt_tl", "mort_acc", "num_op_rev_tl", 
+  "num_rev_accts", "num_sats", "pub_rec", "pub_rec_bankruptcies", "tax_liens", 
+  "all_util", "loan_to_income"
+  )
+
+NUMERIC_VARS_QB_5 <- c("num_tl_120dpd_2m")
+
+NUMERIC_VARS_QB_10 <- c(
+  "mths_since_last_delinq", "mths_since_last_major_derog", 
+  "mths_since_last_record", "mths_since_rcnt_il", "mths_since_recent_bc", 
+  "mths_since_recent_bc_dlq", "mths_since_recent_inq", 
+  "mths_since_recent_revol_delinq", "num_tl_90g_dpd_24m", "num_tl_op_past_12m"
+  )
+
+NUMERIC_VARS_QB_50 <- c(
+  "installment", "bc_open_to_buy", "loan_amnt", "total_bc_limit", "percent_bc_gt_75"
+  )
+
+mean_impute_vals <- c(
+  "bc_util", "num_rev_accts", "bc_open_to_buy", "percent_bc_gt_75", 
+  "total_bal_il", "total_il_high_credit_limit", "total_cu_tl"
+  )
+
+all_vars <- c(
+  applicant_numeric, applicant_categorical, credit_numeric,
+  NUMERIC_VARS_QB_20, NUMERIC_VARS_QB_5, NUMERIC_VARS_QB_10, NUMERIC_VARS_QB_50
+)
 ```
 
 Next, we proceed to select only the relevant columns for our model and remove any missing values in our `int_rate` variable:
@@ -223,8 +283,8 @@ We can ensure that no factor columns have fewer than two factors by running the 
 ```{r}
 #| label: check-factors
 lendingclub_dat_cols |>
-  select(where(is.factor)) %>%
-  select(where( ~ nlevels(.) < 2))
+  select(where(is.factor)) |>
+  select(where(~ nlevels(.) < 2))
 ```
 
 ## Model creation
@@ -251,12 +311,12 @@ rec_obj <- recipe(int_rate ~ ., data = lend_train) |>
   step_impute_mean(mean_impute_vals)
 ```
 
-To verify that the recipe functions as intended, we can run `prep(rec_obj, lend_train) %>% bake(newdata = NULL)`. This will display the data that the workflow will provide to the model.
+To verify that the recipe functions as intended, we can run `prep(rec_obj, lend_train) |> bake(newdata = NULL)`. This will display the data that the workflow will provide to the model.
 
 ```{r}
 #| warning: false
 #| message: false
-prep(rec_obj, lend_train) %>% 
+prep(rec_obj, lend_train) |>
   bake(new_data = NULL)
 ```
 
@@ -293,7 +353,7 @@ Now, let's evaluate our performance. We can analyze our results by calculating t
 lend_linear_results <-
   bind_cols(predict(lend_linear_fit, lend_train)) |>
   bind_cols(lend_train |>
-              select(int_rate))
+    select(int_rate))
 
 rsq(lend_linear_results, truth = int_rate, estimate = .pred)
 ```
@@ -302,8 +362,7 @@ However, one of the advantages of tidymodels is the ability to quickly pivot wit
 
 ```{r}
 lend_rand <- rand_forest(mode = "regression") |>
-  set_engine("ranger",
-             importance = "permutation")
+  set_engine("ranger", importance = "permutation")
 ```
 
 Then, we can pass that model into our workflow and proceed to fit the model:
@@ -311,18 +370,22 @@ Then, we can pass that model into our workflow and proceed to fit the model:
 ```{r}
 #| include: false
 board <-
-  pins::board_connect(auth = "manual",
-                      server = Sys.getenv("CONNECT_SERVER"),
-                      key = Sys.getenv("CONNECT_API_KEY"))
+  pins::board_connect(
+    auth = "manual",
+    server = Sys.getenv("CONNECT_SERVER"),
+    key = Sys.getenv("CONNECT_API_KEY")
+  )
 
-lend_ranger_fit <- 
-  pins::pin_read(board = board, 
-                 name = "isabella.velasquez@posit.co/lend_ranger_fit")
+lend_ranger_fit <-
+  pins::pin_read(
+    board = board,
+    name = "isabella.velasquez@posit.co/lend_ranger_fit"
+  )
 ```
 
 ```{r}
 #| eval: false
-lend_ranger_wflow <- 
+lend_ranger_wflow <-
   workflow() |>
   add_model(lend_rand) |>
   add_recipe(rec_obj)
@@ -338,8 +401,7 @@ Now, let's recalculate the coefficient of determination:
 ```{r}
 lend_ranger_results <-
   bind_cols(predict(lend_ranger_fit, lend_train)) |>
-  bind_cols(lend_train |>
-              select(int_rate))
+  bind_cols(lend_train |> select(int_rate))
 
 rsq(lend_ranger_results, truth = int_rate, estimate = .pred)
 ```
@@ -365,8 +427,8 @@ Let's reconstruct our model using only the top five variables of importance:
 #| eval: false
 imp_var <- c("term", "installment_pct_inc", "bc_open_to_buy", "installment", "percent_bc_gt_75")
 
-lendingclub_dat_cols_select <- 
-  lendingclub_dat_cols |> 
+lendingclub_dat_cols_select <-
+  lendingclub_dat_cols |>
   select(int_rate, all_of(imp_var))
 
 train_test_split_select <- initial_split(lendingclub_dat_cols_select)
@@ -376,10 +438,10 @@ lend_test_select <- testing(train_test_split_select)
 
 rec_obj_select <- recipe(int_rate ~ ., data = lend_train_select) |>
   step_normalize(c("installment", "installment_pct_inc", "percent_bc_gt_75")) |>
-  step_impute_mean("bc_open_to_buy") |> 
+  step_impute_mean("bc_open_to_buy") |>
   step_other()
 
-lend_select_wflow <- 
+lend_select_wflow <-
   workflow() |>
   add_model(lend_rand) |>
   add_recipe(rec_select_obj)
@@ -400,12 +462,13 @@ We can deploy the model by creating a special Plumber router in R with the plumb
 
 ```{r}
 #| eval: false
-board <-
-  pins::board_connect(auth = "manual",
-                      server = Sys.getenv("CONNECT_SERVER"),
-                      key = Sys.getenv("CONNECT_API_KEY"))
+board <- pins::board_connect(
+  auth = "manual",
+  server = Sys.getenv("CONNECT_SERVER"),
+  key = Sys.getenv("CONNECT_API_KEY")
+)
 
-board %>% vetiver_pin_write(v)
+board |> vetiver_pin_write(v)
 ```
 
 Now, we can deploy the model to Posit Connect to generate predictions as needed:
@@ -427,16 +490,17 @@ Since our model is pinned in an API, it can be retrieved by other applications, 
 
 ```{r}
 #| eval: false
-board <- pins::board_connect(server = Sys.getenv("CONNECT_SERVER"),
-                             key = Sys.getenv("CONNECT_API_KEY"))
+board <- pins::board_connect(
+  server = Sys.getenv("CONNECT_SERVER"),
+  key = Sys.getenv("CONNECT_API_KEY")
+)
 ```
 
 Access the endpoint URL:
 
 ```{r}
 #| eval: false
-url <-
-  "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
+url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
 
 endpoint <- vetiver_endpoint(url)
 ```
@@ -453,7 +517,7 @@ predictions_df <- reactive({
     input$input_installment,
     input$percent_bc_gt_75
   )
-  
+
   pred_tibble <-
     tibble(
       term = input$select_term,
@@ -462,19 +526,18 @@ predictions_df <- reactive({
       installment = input$input_installment,
       percent_bc_gt_75 = input$percent_bc_gt_75
     )
-  
-  url <-
-    "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
-  
+
+  url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
+
   endpoint <- vetiver_endpoint(url)
-  
-  api_key = Sys.getenv("CONNECT_API_KEY")
-  
-  predictions <-
-    predict(endpoint,
-            pred_tibble,
-            httr::add_headers(Authorization = paste("Key", api_key)))
-  
+
+  api_key <- Sys.getenv("CONNECT_API_KEY")
+
+  predictions <- predict(
+    endpoint,
+    pred_tibble,
+    httr::add_headers(Authorization = paste("Key", api_key))
+  )
 })
 ```
 
@@ -501,64 +564,74 @@ library(dplyr)
 library(vetiver)
 
 cards <- list(
-  card(full_screen = TRUE,
-       card_header(HTML("<br><br>Term of loan:")),
-       card_body(
-         selectInput(
-           inputId = "select_term",
-           choices = c("36 months", "60 months"),
-           selected = "36 months",
-           label = HTML("<br><br>Select 36 or 60 months:")
-         )
-       )), 
-  card(full_screen = TRUE,
-       card_header("Proportion of monthly income represented by the installment payment:"),
-       card_body(
-         numericInput(
-           inputId = "input_installment_pct_inc",
-           label = HTML("Input a number between<br>0 and 1:"),
-           value = 0.07,
-           min = 0,
-           max = 1,
-           step = 0.01
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header(HTML("<br>Open to buy on revolving bankcards:")),
-       card_body(
-         numericInput(
-           inputId = "input_bc_open_to_buy",
-           label = HTML("Input a number between<br>0 and 500,000:"),
-           value = 14467,
-           min = 0,
-           max = 500000,
-           step = 1000
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header(HTML("<br><br>Installment payment:")),
-       card_body(
-         numericInput(
-           inputId = "input_installment",
-           label = HTML("Input a number between<br>30 and 2000:"),
-           value = 463,
-           min = 30,
-           max = 2000,
-           step = 100
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header(HTML("<br>Percentage of all bankcard accounts > 75:")),
-       card_body(
-         numericInput(
-           inputId = "input_percent_bc_gt_75",
-           label = HTML("Input a number between<br>0 to 100:"),
-           value = 50,
-           min = 0,
-           max = 100,
-           step = 5
-         )
-       ))
+  card(
+    full_screen = TRUE,
+    card_header(HTML("<br><br>Term of loan:")),
+    card_body(
+      selectInput(
+        inputId = "select_term",
+        choices = c("36 months", "60 months"),
+        selected = "36 months",
+        label = HTML("<br><br>Select 36 or 60 months:")
+      )
+    )
+  ),
+  card(
+    full_screen = TRUE,
+    card_header("Proportion of monthly income represented by the installment payment:"),
+    card_body(
+      numericInput(
+        inputId = "input_installment_pct_inc",
+        label = HTML("Input a number between<br>0 and 1:"),
+        value = 0.07,
+        min = 0,
+        max = 1,
+        step = 0.01
+      )
+    )
+  ),
+  card(
+    full_screen = TRUE,
+    card_header(HTML("<br>Open to buy on revolving bankcards:")),
+    card_body(
+      numericInput(
+        inputId = "input_bc_open_to_buy",
+        label = HTML("Input a number between<br>0 and 500,000:"),
+        value = 14467,
+        min = 0,
+        max = 500000,
+        step = 1000
+      )
+    )
+  ),
+  card(
+    full_screen = TRUE,
+    card_header(HTML("<br><br>Installment payment:")),
+    card_body(
+      numericInput(
+        inputId = "input_installment",
+        label = HTML("Input a number between<br>30 and 2000:"),
+        value = 463,
+        min = 30,
+        max = 2000,
+        step = 100
+      )
+    )
+  ),
+  card(
+    full_screen = TRUE,
+    card_header(HTML("<br>Percentage of all bankcard accounts > 75:")),
+    card_body(
+      numericInput(
+        inputId = "input_percent_bc_gt_75",
+        label = HTML("Input a number between<br>0 to 100:"),
+        value = 50,
+        min = 0,
+        max = 100,
+        step = 5
+      )
+    )
+  )
 )
 
 vbs <- list(
@@ -584,22 +657,24 @@ foot <-
 
 ui <- bslib::page(
   title = "Interest rate prediction app",
-  layout_columns(width = 1/5,
-                 height =250,
-                 cards[[2]], cards[[3]], cards[[5]], cards[[4]], cards[[1]]),
+  layout_columns(
+    width = 1 / 5,
+    height = 250,
+    cards[[2]], cards[[3]], cards[[5]], cards[[4]], cards[[1]]
+  ),
   layout_columns(vbs[[1]]),
   card_footer(foot)
 )
 
 server <- function(input, output, session) {
-  
-  board <- pins::board_connect(server = Sys.getenv("CONNECT_SERVER"),
-                               key = Sys.getenv("CONNECT_API_KEY"))
-  
+  board <- pins::board_connect(
+    server = Sys.getenv("CONNECT_SERVER"),
+    key = Sys.getenv("CONNECT_API_KEY")
+  )
+
   predictions_df <- reactive({
-    
     req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_percent_bc_gt_75)
-    
+
     pred_tibble <-
       tibble(
         term = input$select_term,
@@ -608,25 +683,25 @@ server <- function(input, output, session) {
         installment = input$input_installment,
         percent_bc_gt_75 = input$input_percent_bc_gt_75
       )
-    
+
     url <-
       "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
-    
+
     endpoint <- vetiver_endpoint(url)
-    
-    apiKey = Sys.getenv("CONNECT_API_KEY")
-    
+
+    apiKey <- Sys.getenv("CONNECT_API_KEY")
+
     predictions <-
-      predict(endpoint,
-              pred_tibble,
-              httr::add_headers(Authorization = paste("Key", apiKey)))
-    
+      predict(
+        endpoint,
+        pred_tibble,
+        httr::add_headers(Authorization = paste("Key", apiKey))
+      )
   })
-  
+
   output$pred_int <- renderText({
     predictions_df()$.pred
   })
-  
 }
 
 shinyApp(ui, server)
