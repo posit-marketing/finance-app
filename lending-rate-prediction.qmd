@@ -6,7 +6,10 @@ format:
     code-fold: true
     code-summary: Show the code
     code-links:
-      - repo
+      - text: "GitHub repository"
+        icon: github
+        target: blank
+        href: https://github.com/posit-marketing/finance-app/
       - text: "Model pin"
         icon: pin
         target: blank
@@ -81,6 +84,8 @@ As previously mentioned, analysts have several options for accessing Databricks 
 
 ```{r}
 #| label: odbc-connection
+# Sys.setenv("DATABRICKS_HOST" = "your-databricks-host.com")
+# Sys.setenv("DATABRICKS_TOKEN" = "your-databricks-token")
 con <-
   dbConnect(odbc::databricks(), httpPath = Sys.getenv("HTTP_PATH"))
 ```
@@ -89,10 +94,9 @@ This code snippet establishes a connection using the `con` object. Subsequently,
 
 ```{r}
 #| label: get-tbl-data
-lendingclub_dat <- tbl(
-  con,
-  dbplyr::in_catalog("hive_metastore", "default", "lendingclub")
-)
+lendingclub_dat <-
+  tbl(con,
+      dbplyr::in_catalog("hive_metastore", "default", "lendingclub"))
 ```
 
 We can use the [dbplot package](https://edgararuiz.github.io/dbplot/) to generate a ggplot without transferring the data into R. This visualization displays the distribution of the variable we aim to predict, lending rate. Loan amounts are plotted on the x-axis, while the frequency of loans at each amount is depicted on the y-axis. It's shown that the majority of loans have an lending rate of less than 20%.
@@ -121,9 +125,37 @@ lendingclub_dat |>
 
 ## Data cleaning and feature engineering
 
-The `lendingclub_dat` object resembles a typical data frame, but it's actually a SQL table. With the [dbplyr package](), we can use dplyr syntax to query and manipulate these SQL tables directly in R. Running operations before "collecting" the data leads to significantly faster performance.
+The `lendingclub_dat` object resembles a typical data frame, but it's actually a SQL table. With the [dbplyr package](https://dbplyr.tidyverse.org/), we can use dplyr syntax to query and manipulate these SQL tables directly in R.
 
-Certain columns are imported as characters instead of their intended numeric type. With the `mutate()` function, we can convert them to the correct type. Additionally, `mutate()` allows us to create supplementary variables that could potentially influence lending rates.
+Certain columns in `lendingclub_dat` are imported as characters instead of their intended numeric type. With dplyr's `mutate()` function, we can convert them to the correct type. The chunk below showcases the conversion of columns containing the word `annual` using both dplyr and SQL syntax. The `show_query()` function shows the underlying SQL query. This example highlights the efficiency of dplyr’s syntax in R, offering a more concise alternative to verbose SQL queries.
+
+::: {.panel-tabset}
+
+## R syntax
+
+```{r}
+#| label: dplyr-syntax
+#| code-fold: false
+#| eval: false
+tbl(con,
+    dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
+    mutate(across(c(starts_with("annual")), ~ as.numeric(.)))
+```
+
+## SQL syntax
+
+```{r}
+#| label: sql-syntax
+#| code-fold: false
+tbl(con,
+    dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
+    mutate(across(c(starts_with("annual")), ~ as.numeric(.))) |>
+    show_query()
+```
+
+:::
+
+Now, we can proceed with using dplyr to clean up the rest of the variables and create supplementary variables that could potentially influence lending rates. Running operations before pulling the data into R with `collect()` leads to significantly faster performance.
 
 ```{r}
 #| label: pre-collect-data-clean
@@ -171,7 +203,7 @@ lendingclub_dat <- tbl(
   collect()
 ```
 
-Although we ran these steps before `collect()`, once we have our data frame in R, we gain access to additional advanced R functions that are not available in SQL. This enables us to further refine and clean our data as needed.
+After running `collect()`, when we have our data frame in R, we gain access to additional advanced R functions that are not available in SQL. This enables us to further refine and clean our data as needed.
 
 ```{r}
 #| label: post-collect-data-clean
@@ -312,6 +344,7 @@ Using tidymodels, we can construct a "recipe" detailing the decisions we want to
 * `step_impute_mean()`: This recipe step replaces missing values of numeric variables with the mean of those values in the training set. Performing this step now, rather than during the data cleaning phase, prevents information leakage from the testing set into the model. By calculating the mean solely using the training set, we avoid bias when applying it to the testing data during model evaluation.
 
 ```{r}
+#| label: create-recipe
 rec_obj <- recipe(int_rate ~ ., data = lend_train) |>
   step_normalize(applicant_numeric, credit_numeric) |>
   step_impute_mean(mean_impute_vals)
@@ -320,6 +353,7 @@ rec_obj <- recipe(int_rate ~ ., data = lend_train) |>
 To verify that the recipe functions as intended, we can run `prep(rec_obj, lend_train) |> bake(newdata = NULL)`. This will display the data that the workflow will provide to the model.
 
 ```{r}
+#| label: display-workflow-data
 #| warning: false
 #| message: false
 prep(rec_obj, lend_train) |>
@@ -329,6 +363,7 @@ prep(rec_obj, lend_train) |>
 Now, we proceed with a linear model. `linear_reg()` specifies a model capable of predicting numeric values from predictors using a linear function. We construct a workflow incorporating our recipe alongside the linear model.
 
 ```{r}
+#| label: run-linear-workflow
 lend_linear <- linear_reg()
 
 lend_linear_wflow <-
@@ -340,6 +375,7 @@ lend_linear_wflow <-
 Now, we can fit our model using `fit()` along with the training dataset.
 
 ```{r}
+#| label: fit-linear-workflow
 lend_linear_fit <-
   lend_linear_wflow |>
   fit(data = lend_train)
@@ -348,6 +384,7 @@ lend_linear_fit <-
 Below are our predicted lending rates:
 
 ```{r}
+#| label: predict-linear-workflow
 #| warning: false
 predict(lend_linear_fit, lend_test)
 ```
@@ -355,6 +392,7 @@ predict(lend_linear_fit, lend_test)
 Now, let's evaluate our performance. We can analyze our results by calculating the coefficient of determination, which is 0.6 in this case. While this indicates some level of explanatory power, it suggests that our model's estimate may not be very robust.
 
 ```{r}
+#| label: rsq-linear-workflow
 #| warning: false
 lend_linear_results <-
   bind_cols(predict(lend_linear_fit, lend_train)) |>
@@ -367,6 +405,7 @@ rsq(lend_linear_results, truth = int_rate, estimate = .pred)
 However, one of the advantages of tidymodels is the ability to quickly pivot with the steps we've already executed. Instead of a linear model, we can now define a random forest model.
 
 ```{r}
+#| label: set-ranger-workflow
 lend_rand <- rand_forest(mode = "regression") |>
   set_engine("ranger", importance = "permutation")
 ```
@@ -376,6 +415,7 @@ Then, we can pass that model into our workflow and proceed to fit the model.
 <!---The random forest model takes several minutes to run. To expedite document rendering, I've saved the model in a pin and called it from the chunk below. -->
 
 ```{r}
+#| label: pull-ranger-pin
 #| include: false
 board <-
   board_connect(
@@ -392,6 +432,7 @@ lend_ranger_fit <-
 ```
 
 ```{r}
+#| label: run-fit-ranger-workflow
 #| eval: false
 lend_ranger_wflow <-
   workflow() |>
@@ -407,6 +448,7 @@ Recalculating the coefficient of determination, we get:
 
 
 ```{r}
+#| label: rsq-ranger-workflow
 lend_ranger_results <-
   bind_cols(predict(lend_ranger_fit, lend_train)) |>
   bind_cols(lend_train |> select(int_rate))
@@ -419,6 +461,7 @@ Now, that's a significant improvement!
 Given the number of variables in our model, it's natural to want to identify the most important ones. We can compute variable importance by running `vi` to achieve this.
 
 ```{r}
+#| label: vi-ranger-workflow
 vip:::vi(lend_ranger_fit) |>
   arrange(desc(Importance))
 ```
@@ -432,6 +475,7 @@ If we aim to log our model for use in other contexts, like a Shiny app, we can u
 Let's reconstruct our model using only the top five variables of importance.
 
 ```{r}
+#| label: select-ranger-workflow
 #| eval: false
 imp_var <- c("term", "installment_pct_inc", "bc_open_to_buy", "installment", "percent_bc_gt_75")
 
@@ -462,6 +506,7 @@ lend_select_fit <-
 We can create a vetiver object `v` to store the trained model.
 
 ```{r}
+#| label: create-vetiver-obj
 #| eval: false
 v <- vetiver_model(lend_select_fit, "lend_fit")
 ```
@@ -469,6 +514,7 @@ v <- vetiver_model(lend_select_fit, "lend_fit")
 We can deploy the model by creating a special Plumber router in R with the plumber package. We add a POST endpoint for making predictions. Following that, we connect to the destination where we intend to store our model artifact. In our case, this would be Posit Connect. Then, we save the vetiver model to a pin for future access.
 
 ```{r}
+#| label: add-post-endpoint
 #| eval: false
 board <-
   board_connect(
@@ -483,6 +529,7 @@ board |> vetiver_pin_write(v)
 Now, we can deploy the model to Posit Connect to generate predictions as needed.
 
 ```{r}
+#| label: deploy-vetiver-model
 #| eval: false
 vetiver_deploy_rsconnect(
   board = board,
@@ -498,6 +545,7 @@ Now that our model is available through an API, we can use it in other places --
 Since our model is pinned in an API, it can be retrieved by other applications, such as a Shiny app. Within the `server` section of our Shiny app, we retrieve the data by connecting to our pin board:
 
 ```{r}
+#| label: connect-shiny-app
 #| eval: false
 #| code-fold: false
 board <-
@@ -508,6 +556,7 @@ board <-
 Access the endpoint URL with `vetiver_endpoint()`:
 
 ```{r}
+#| label: access-shiny-endpoint
 #| code-fold: false
 #| eval: false
 url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
@@ -518,6 +567,7 @@ endpoint <- vetiver_endpoint(url)
 Also in the server portion of the Shiny app, establish a reactive variable (named `predictions_df` here) that generates a tibble from the user's inputs and passes it to the endpoint.
 
 ```{r}
+#| label: make-shiny-predictions
 #| eval: false
 #| code-fold: false
 predictions_df <- reactive({
@@ -555,6 +605,7 @@ predictions_df <- reactive({
 Below is our Shiny app for predicting lending rates. Each time you select an input, it calculates the rate based on our random forest model. The design and layout of the Shiny app is developed with [bslib](https://rstudio.github.io/bslib/).
 
 ```{r}
+#| label: predit-shiny-app
 #| eval: false
 library(shiny)
 library(bslib)
