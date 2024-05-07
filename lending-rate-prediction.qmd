@@ -50,6 +50,9 @@ Let's start by loading the packages that will be integral to our workflow.
 ```{r}
 #| label: setup
 #| message: false
+# Importing data
+library(DBI)
+
 # Wrangling packages
 library(dplyr)
 library(tidyr)
@@ -78,10 +81,8 @@ As previously mentioned, analysts have several options for accessing Databricks 
 
 ```{r}
 #| label: odbc-connection
-con <- DBI::dbConnect(
-  odbc::databricks(),
-  httpPath = Sys.getenv("HTTP_PATH")
-)
+con <-
+  dbConnect(odbc::databricks(), httpPath = Sys.getenv("HTTP_PATH"))
 ```
 
 This code snippet establishes a connection using the `con` object. Subsequently, we can use dplyr and dbplyr to navigate to our table. We retrieve the `lendingclub` table using `tbl()` and store it in an object named `lendingclub_dat`.
@@ -377,14 +378,14 @@ Then, we can pass that model into our workflow and proceed to fit the model.
 ```{r}
 #| include: false
 board <-
-  pins::board_connect(
+  board_connect(
     auth = "manual",
     server = Sys.getenv("CONNECT_SERVER"),
     key = Sys.getenv("CONNECT_API_KEY")
   )
 
 lend_ranger_fit <-
-  pins::pin_read(
+  pin_read(
     board = board,
     name = "isabella.velasquez@posit.co/lend_ranger_fit"
   )
@@ -469,11 +470,12 @@ We can deploy the model by creating a special Plumber router in R with the plumb
 
 ```{r}
 #| eval: false
-board <- pins::board_connect(
-  auth = "manual",
-  server = Sys.getenv("CONNECT_SERVER"),
-  key = Sys.getenv("CONNECT_API_KEY")
-)
+board <-
+  board_connect(
+    auth = "manual",
+    server = Sys.getenv("CONNECT_SERVER"),
+    key = Sys.getenv("CONNECT_API_KEY")
+  )
 
 board |> vetiver_pin_write(v)
 ```
@@ -498,10 +500,9 @@ Since our model is pinned in an API, it can be retrieved by other applications, 
 ```{r}
 #| eval: false
 #| code-fold: false
-board <- pins::board_connect(
-  server = Sys.getenv("CONNECT_SERVER"),
-  key = Sys.getenv("CONNECT_API_KEY")
-)
+board <-
+  board_connect(server = Sys.getenv("CONNECT_SERVER"),
+                key = Sys.getenv("CONNECT_API_KEY"))
 ```
 
 Access the endpoint URL with `vetiver_endpoint()`:
@@ -655,8 +656,9 @@ ui <- bslib::page(
 
 server <- function(input, output, session) {
   
-  board <- pins::board_connect(server = Sys.getenv("CONNECT_SERVER"),
-                               key = Sys.getenv("CONNECT_API_KEY"))
+  board <-
+    board_connect(server = Sys.getenv("CONNECT_SERVER"),
+                  key = Sys.getenv("CONNECT_API_KEY"))
   
   predictions_df <- reactive({
     
