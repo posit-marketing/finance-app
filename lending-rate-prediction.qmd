@@ -127,7 +127,9 @@ lendingclub_dat |>
 
 The `lendingclub_dat` object resembles a typical data frame, but it's actually a SQL table. With the [dbplyr package](https://dbplyr.tidyverse.org/), we can use dplyr syntax to query and manipulate these SQL tables directly in R.
 
-Certain columns in `lendingclub_dat` are imported as characters instead of their intended numeric type. With dplyr's `mutate()` function, we can convert them to the correct type. The chunk below showcases the conversion of columns containing the word `annual` using both dplyr and SQL syntax. The `show_query()` function shows the underlying SQL query. This example highlights the efficiency of dplyr’s syntax in R, offering a more concise alternative to verbose SQL queries.
+Certain columns in `lendingclub_dat` are imported as characters instead of their intended numeric type. The code below shows how we can use dplyr functions to convert them to the correct type. dbplyr then converts this dplyr code into SQL. 
+
+You can see the underlying SQL query by running `show_query()`. Click on the `SQL syntax` tab to see the results of `show_query()`. This example highlights the efficiency of dplyr’s syntax in R, offering a more concise alternative to verbose SQL queries.
 
 ::: {.panel-tabset}
 
