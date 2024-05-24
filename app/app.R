@@ -2,38 +2,82 @@ library(shiny)
 library(bslib)
 library(bsicons)
 library(dplyr)
+library(ggplot2)
 library(vetiver)
 tidymodels::tidymodels_prefer(quiet = TRUE)
 
+# Connect to deployed model to make predictions
+server <- 
+  Sys.getenv("CONNECT_SERVER")
+
+api_key <- 
+  Sys.getenv("CONNECT_API_KEY")
+
+board <- 
+  pins::board_connect(
+    server = Sys.getenv("CONNECT_SERVER"),
+    key = Sys.getenv("CONNECT_API_KEY")
+  )
+
+endpoint <- 
+  vetiver_endpoint(
+    "https://pub.demo.posit.team/public/lending-club-model-vetiver-api/predict"
+  )
+
+source("authenticate.R")
+source("helpers.R")
+
+rates <-
+  tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
+  mutate(int_rate = as.numeric(REPLACE(int_rate, "%", "")))
+
+ranges <- 
+  rates |> 
+  summarize(min = min(int_rate, na.rm = TRUE), 
+            max = max(int_rate, na.rm = TRUE)) |> 
+  collect()
+
 cards <- list(
   card(full_screen = TRUE,
-       card_header(HTML("<br><br><br>Term of loan:")),
+       card_header(HTML("Term of loan")),
        card_body(
          selectInput(
-           inputId = "select_term",
-           choices = c("36 months", "60 months"),
-           selected = "36 months",
-           label = HTML("<br>Select 36 or 60 months:")
+           inputId = "term",
+           choices = list("36 months" = 36, "60 months" = 60),
+           selected = 36,
+           label = "How soon would you like to pay off the loan?"
          )
        )), 
   card(full_screen = TRUE,
-       card_header("Proportion of monthly income represented by the installment payment:"),
+       card_header("Credit Utilization"),
        card_body(
          numericInput(
-           inputId = "input_installment_pct_inc",
-           label = HTML("Input a number between<br>0 and 1:"),
-           value = 0.07,
+           inputId = "all_util",
+           label = "What is the ratio of your current credit balances to your total credit limits for all sources?",
+           value = 0,
            min = 0,
            max = 1,
-           step = 0.01
+           step = 0.05
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br><br>Open to buy on revolving bankcards:")),
+       card_header("Bank Card Utilization"),
        card_body(
          numericInput(
-           inputId = "input_bc_open_to_buy",
-           label = HTML("Input a number between<br>0 and 500,000:"),
+           inputId = "bc_util",
+           label = "What is the ratio of your current credit balances to your total credit limits for only bank card sources?",
+           value = 0,
+           min = 0,
+           max = 1,
+           step = 0.05
+         )
+       )),
+  card(full_screen = TRUE,
+       card_header("Available Bank Card Credit"),
+       card_body(
+         numericInput(
+           inputId = "bc_open_to_buy",
+           label = "What is your current available credit across all bank cards?",
            value = 14467,
            min = 0,
            max = 500000,
@@ -41,27 +85,15 @@ cards <- list(
          )
        )),
   card(full_screen = TRUE,
-       card_header(HTML("<br><br><br>Installment payment:")),
+       card_header("Heavily Withdrawn Bank Cards"),
        card_body(
          numericInput(
-           inputId = "input_installment",
-           label = HTML("Input a number between<br>30 and 2000:"),
-           value = 463,
-           min = 30,
-           max = 2000,
-           step = 100
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header(HTML("<br><br>Percentage of all bankcard accounts > 75")),
-       card_body(
-         numericInput(
-           inputId = "input_percent_bc_gt_75",
-           label = HTML("<br>Input a number<br>between 0 and 100:"),
-           value = 50,
+           inputId = "percent_bc_gt_75",
+           label = "What percent of your bank cards currently have a balance that is greater than 75% of their limit?",
+           value = 0,
            min = 0,
            max = 100,
-           step = 5
+           step = 1
          )
        ))
 )
@@ -87,50 +119,70 @@ foot <-
     )
   )
 
+plot <-
+  card(full_screen = TRUE,
+       card_header(HTML("Comparison to interest rates from the most recent 30 days")),
+       card_body(
+         plotOutput("plot")
+       ))
+
 ui <- bslib::page(
-  title = "Interest rate prediction app",
-  layout_columns(width = 1/5,
-                 height = 275,
-                 cards[[2]], cards[[3]], cards[[4]], cards[[5]], cards[[1]]),
-  layout_columns(vbs[[1]]),
+  title = "Predicted Interest Rate Calculator",
+  layout_columns(
+    layout_columns(cards[[1]], cards[[2]], cards[[3]], cards[[4]], cards[[5]],
+                   width = 1/5,
+                   height = 275),
+    layout_columns(vbs[[1]], plot,
+                   height = 350,
+                   col_widths = c(3, 9)),
+    col_widths = c(12, 12)
+  ),
   card_footer(foot)
 )
 
 server <- function(input, output, session) {
   
-  board <- pins::board_connect(server = Sys.getenv("CONNECT_SERVER"),
-                               key = Sys.getenv("CONNECT_API_KEY"))
-  
   predictions_df <- reactive({
     
-    req(input$select_term, input$input_installment_pct_inc, input$input_bc_open_to_buy, input$input_installment, input$input_percent_bc_gt_75)
+    req(input$term,
+        input$all_util,
+        input$bc_util,
+        input$bc_open_to_buy,
+        input$percent_bc_gt_75)
     
     pred_tibble <-
-      tibble(
-        term = input$select_term,
-        installment_pct_inc = input$input_installment_pct_inc,
-        bc_open_to_buy = input$input_bc_open_to_buy,
-        installment = input$input_installment,
-        percent_bc_gt_75 = input$input_percent_bc_gt_75
-      )
+      tibble(term = input$term,
+             all_util = input$all_util,
+             bc_util = input$bc_util,
+             bc_open_to_buy = input$bc_open_to_buy,
+             percent_bc_gt_75 = input$percent_bc_gt_75)
     
-    url <-
-      "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
-    
-    endpoint <- vetiver_endpoint(url)
-    
-    apiKey = Sys.getenv("CONNECT_API_KEY")
-    
-    predictions <-
-      predict(endpoint,
-              pred_tibble,
-              httr::add_headers(Authorization = paste("Key", apiKey)))
+    predict(endpoint, pred_tibble)
     
   })
   
   output$pred_int <- renderText({
     predictions_df()$.pred
   })
+  
+  rate_range <- reactive({
+    rates |> 
+      find_100_most_similar(input$term, 
+                            input$all_util, 
+                            input$bc_util, 
+                            input$bc_open_to_buy, 
+                            input$percent_bc_gt_75)
+  })
+
+  output$plot <-
+    renderPlot({
+      rate_range() |> 
+        ggplot(aes(xmin = min_rate, xmax = max_rate, ymin = 1, ymax = 1.5)) +
+        geom_rect(fill = "steelblue") +
+        ylim(c(0, 2.5)) +
+        xlim(c(ranges$min, ranges$max)) +
+        theme_minimal()
+    })
   
 }
 

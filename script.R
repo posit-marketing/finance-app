@@ -327,3 +327,10 @@ vetiver_deploy_rsconnect(
   name = "garrett@posit.co/lending_club_model",
   predict_args = list(debug = TRUE)
 )
+
+
+# Give your API a path on Connect so we can use it in future steps, e.g.
+# endpoint <- 
+#   vetiver_endpoint(
+#     "https://pub.demo.posit.team/public/lending-club-model-vetiver-api/predict"
+#   )
