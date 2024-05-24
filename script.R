@@ -24,7 +24,7 @@ library(rsconnect)
 # that are irrelevant, incomplete, or will not be available when predicting
 # interest rates
 
-library(tidyverse)
+# library(tidyverse)
 
 con <-
   DBI::dbConnect(odbc::databricks(), httpPath = "/sql/1.0/warehouses/300bd24ba12adf8e")
@@ -116,7 +116,7 @@ lendingclub_dat_clean <-
     # Convert characters to factors
     across(where(is.character), .fns = as.factor),
     # Encode ordered factors
-    term = as.ordered(term),
+    term = as.numeric(stringr::str_trim(stringr::str_remove(term, "months"))),
     emp_length = as.ordered(factor(emp_length, 
                                    levels = c("< 1 year", "1 year", "2 years", 
                                               "3 years", "4 years", "5 years",
@@ -150,15 +150,15 @@ lendingclub_dat_clean |>
 # We use Lasso to identify the set of variables likely to maximize performance
 # without overfitting. We tune to find the ideal penalty parameter.
 
-library(tidyverse)
-library(rsample)
-library(recipes)
-library(parsnip)
-library(workflows)
-library(yardstick)
-library(glmnet)
-library(dials)
-library(tune)
+# library(tidyverse)
+# library(rsample)
+# library(recipes)
+# library(parsnip)
+# library(workflows)
+# library(yardstick)
+# library(glmnet)
+# library(dials)
+# library(tune)
 
 set.seed(1234)
 train_test_split <- initial_split(lendingclub_dat_clean)
@@ -168,7 +168,7 @@ lend_test <- testing(train_test_split)
 
 rec_obj <- recipe(int_rate ~ ., data = lend_train) |>
   step_normalize(all_numeric_predictors()) |>
-  step_ordinalscore(c(term, emp_length)) |> 
+  step_ordinalscore(emp_length) |> 
   step_integer(c("addr_state", "application_type", "home_ownership", "zip_code")) |> 
   step_impute_mean(all_of(mean_impute_vals))
 
@@ -225,7 +225,7 @@ rmse(lend_lasso_results, truth = int_rate, estimate = .pred)
 
 # How many variables are in this model?
 
-library(broom)
+# library(broom)
 
 lend_lasso_fit |>
   extract_fit_parsnip() |> 
@@ -264,7 +264,6 @@ reduced_test <- testing(reduced_split)
 
 red_rec_obj <- recipe(int_rate ~ ., data = reduced_train) |>
   step_normalize(all_numeric_predictors()) |>
-  step_ordinalscore(term) |> 
   step_impute_mean(all_of(c("bc_open_to_buy", "bc_util", "percent_bc_gt_75")))
 
 lend_linear <- 
@@ -293,10 +292,10 @@ rmse(lend_linear_results, truth = int_rate, estimate = .pred)
 # ------------------------------------------------------------------------------
 # Now let's host the model as a pin
 
-library(vetiver)
-library(pins)
-library(plumber)
-library(rsconnect)
+# library(vetiver)
+# library(pins)
+# library(plumber)
+# library(rsconnect)
 
 v <- 
   vetiver_model(lend_linear_fit, "lending_club_model")
