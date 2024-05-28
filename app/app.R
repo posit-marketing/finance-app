@@ -37,64 +37,88 @@ max_range <-
   max(na.rm = TRUE)
 
 cards <- list(
-  card(full_screen = TRUE,
-       card_header(HTML("Term of loan")),
-       card_body(
-         selectInput(
-           inputId = "term",
-           choices = list("36 months" = 36, "60 months" = 60),
-           selected = 36,
-           label = "How soon would you like to pay off the loan?"
-         )
-       )), 
-  card(full_screen = TRUE,
-       card_header("Credit Utilization"),
-       card_body(
-         numericInput(
-           inputId = "all_util",
-           label = "What is the ratio of your current credit balances to your total credit limits for all sources?",
-           value = 0,
-           min = 0,
-           max = 1,
-           step = 0.05
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header("Bank Card Utilization"),
-       card_body(
-         numericInput(
-           inputId = "bc_util",
-           label = "What is the ratio of your current credit balances to your total credit limits for only bank card sources?",
-           value = 0,
-           min = 0,
-           max = 1,
-           step = 0.05
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header("Available Bank Card Credit"),
-       card_body(
-         numericInput(
-           inputId = "bc_open_to_buy",
-           label = "What is your current available credit across all bank cards?",
-           value = 14467,
-           min = 0,
-           max = 500000,
-           step = 1000
-         )
-       )),
-  card(full_screen = TRUE,
-       card_header("Heavily Withdrawn Bank Cards"),
-       card_body(
-         numericInput(
-           inputId = "percent_bc_gt_75",
-           label = "What percent of your bank cards currently have a balance that is greater than 75% of their limit?",
-           value = 0,
-           min = 0,
-           max = 100,
-           step = 1
-         )
-       ))
+  card(
+    full_screen = TRUE,
+    card_body(
+      selectInput(
+        inputId = "term",
+        choices = list("36 months" = 36, "60 months" = 60),
+        selected = 36,
+        label = tooltip(
+          trigger = list("Term of loan", bs_icon("info-circle")),
+          "How soon would you like to pay off the loan?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    full_screen = TRUE,
+    card_body(
+      numericInput(
+        inputId = "all_util",
+        value = 0,
+        min = 0,
+        max = 1,
+        step = 0.05,
+        label = tooltip(
+          trigger = list("Credit Utilization", bs_icon("info-circle")),
+          "What is the ratio of your current credit balances to your total credit limits for all sources?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    full_screen = TRUE,
+    card_body(
+      numericInput(
+        inputId = "bc_util",
+        value = 0,
+        min = 0,
+        max = 1,
+        step = 0.05,
+        label = tooltip(
+          trigger = list("Bank Card Utilization", bs_icon("info-circle")),
+          "What is the ratio of your current credit balances to your total credit limits for only bank card sources?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    full_screen = TRUE,
+    card_body(
+      numericInput(
+        inputId = "bc_open_to_buy",
+        value = 14467,
+        min = 0,
+        max = 500000,
+        step = 1000,
+        label = tooltip(
+          trigger = list("Available Bank Card Credit", bs_icon("info-circle")),
+          "What is your current available credit across all bank cards?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    full_screen = TRUE,
+    card_body(
+      numericInput(
+        inputId = "percent_bc_gt_75",
+        value = 0,
+        min = 0,
+        max = 100,
+        step = 1,
+        label = tooltip(
+          trigger = list("Heavily Withdrawn Bank Cards", bs_icon("info-circle")),
+          "What percent of your bank cards currently have a balance that is greater than 75% of their limit?"
+        )
+      )
+    )
+  )
 )
 
 vbs <- list(
@@ -120,12 +144,12 @@ foot <-
 
 plot <-
   card(full_screen = TRUE,
-       card_header(HTML("Predicted rate vs. historical range for similar applicants")),
+       card_header(HTML("Applicants like you have received interest rates in this range")),
        card_body(
          plotOutput("plot")
        ))
 
-ui <- bslib::page(
+ui <- bslib::page_navbar(
   title = "Predicted Interest Rate Calculator",
   layout_columns(
     layout_columns(cards[[1]], cards[[2]], cards[[3]], cards[[4]], cards[[5]],
@@ -178,6 +202,9 @@ server <- function(input, output, session) {
 
   output$plot <-
     renderPlot({
+      min_rate <- rate_range() |> pull(min_rate)
+      max_rate <- rate_range() |> pull(max_rate)
+      
       rate_range() |> 
         ggplot(aes(xmin = min_rate, xmax = max_rate, ymin = 1, ymax = 1.5)) +
         geom_rect(fill = "steelblue") +
@@ -191,7 +218,9 @@ server <- function(input, output, session) {
         theme(axis.text.y = element_blank(),
               axis.ticks.y = element_blank()) +
         scale_x_continuous(limits = c(0, max_range),
-                           breaks = seq(from = 0, to = max_range, by = 5))
+                           breaks = seq(from = 0, to = max_range, by = 5)) +
+        annotate("text", x = min_rate, label = paste0(min_rate, " "), y = 1.25, hjust = "right", color = "steelblue", size = 7) +
+        annotate("text", x = max_rate, label = paste0(" ", max_rate), y = 1.25, hjust = "left", color = "steelblue", size = 7)
     })
   
 }
