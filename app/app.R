@@ -31,11 +31,10 @@ rates <-
   tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
   mutate(int_rate = as.numeric(REPLACE(int_rate, "%", "")))
 
-ranges <- 
+max_range <- 
   rates |> 
-  summarize(min = min(int_rate, na.rm = TRUE), 
-            max = max(int_rate, na.rm = TRUE)) |> 
-  collect()
+  pull(int_rate) |> 
+  max(na.rm = TRUE)
 
 cards <- list(
   card(full_screen = TRUE,
@@ -121,7 +120,7 @@ foot <-
 
 plot <-
   card(full_screen = TRUE,
-       card_header(HTML("Comparison to interest rates from the most recent 30 days")),
+       card_header(HTML("Predicted rate vs. historical range for similar applicants")),
        card_body(
          plotOutput("plot")
        ))
@@ -161,17 +160,20 @@ server <- function(input, output, session) {
     
   })
   
+  predicted_rate <-
+    reactive(predictions_df()$.pred)
+  
   output$pred_int <- renderText({
-    predictions_df()$.pred
+    predicted_rate()
   })
   
   rate_range <- reactive({
     rates |> 
-      find_100_most_similar(input$term, 
-                            input$all_util, 
-                            input$bc_util, 
-                            input$bc_open_to_buy, 
-                            input$percent_bc_gt_75)
+      find_range_for_similar_applicants(input$term, 
+                                        input$all_util, 
+                                        input$bc_util, 
+                                        input$bc_open_to_buy, 
+                                        input$percent_bc_gt_75)
   })
 
   output$plot <-
@@ -179,9 +181,17 @@ server <- function(input, output, session) {
       rate_range() |> 
         ggplot(aes(xmin = min_rate, xmax = max_rate, ymin = 1, ymax = 1.5)) +
         geom_rect(fill = "steelblue") +
+        geom_segment(
+          aes(x = predicted_rate(), xend = predicted_rate(), y = 0.9, yend = 1.6), 
+          color = "#082D46",
+          linewidth = 2) +
         ylim(c(0, 2.5)) +
-        xlim(c(ranges$min, ranges$max)) +
-        theme_minimal()
+        theme_minimal() +
+        labs(y = "", x = "Interest Rate (%)") +
+        theme(axis.text.y = element_blank(),
+              axis.ticks.y = element_blank()) +
+        scale_x_continuous(limits = c(0, max_range),
+                           breaks = seq(from = 0, to = max_range, by = 5))
     })
   
 }
