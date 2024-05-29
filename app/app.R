@@ -1,3 +1,6 @@
+# install.packages("remotes")
+# remotes::install_github("rstudio/bslib") # for version 0.7.1
+# remotes::install_github("rstudio/shiny") # for version 1.8.1.9001
 library(shiny)
 library(bslib)
 library(bsicons)
@@ -38,7 +41,6 @@ max_range <-
 
 cards <- list(
   card(
-    full_screen = TRUE,
     card_body(
       selectInput(
         inputId = "term",
@@ -53,7 +55,6 @@ cards <- list(
   ),
   
   card(
-    full_screen = TRUE,
     card_body(
       numericInput(
         inputId = "all_util",
@@ -70,7 +71,6 @@ cards <- list(
   ),
   
   card(
-    full_screen = TRUE,
     card_body(
       numericInput(
         inputId = "bc_util",
@@ -87,7 +87,6 @@ cards <- list(
   ),
   
   card(
-    full_screen = TRUE,
     card_body(
       numericInput(
         inputId = "bc_open_to_buy",
@@ -104,7 +103,6 @@ cards <- list(
   ),
   
   card(
-    full_screen = TRUE,
     card_body(
       numericInput(
         inputId = "percent_bc_gt_75",
@@ -113,7 +111,7 @@ cards <- list(
         max = 100,
         step = 1,
         label = tooltip(
-          trigger = list("Heavily Withdrawn Bank Cards", bs_icon("info-circle")),
+          trigger = list("Heavily Withdrawn Cards", bs_icon("info-circle")),
           "What percent of your bank cards currently have a balance that is greater than 75% of their limit?"
         )
       )
@@ -121,18 +119,14 @@ cards <- list(
   )
 )
 
-vbs <- list(
+vbs <-
   value_box(
     title = "Predicted interest rate",
     value = textOutput("pred_int"),
     style = "background-color: #082D46!important; color: #FFFFFF!important",
-    showcase = bsicons::bs_icon("bank", size = "0.75em"),
-    showcase_layout = "top right",
-    full_screen = FALSE,
-    fill = TRUE,
-    height = NULL
+    showcase = bsicons::bs_icon("bank", fill = '#4682b4 !important;'),
+    showcase_layout = "top right"
   )
-)
 
 foot <-
   tags$div(
@@ -151,20 +145,31 @@ plot <-
 
 ui <- bslib::page_navbar(
   title = "Predicted Interest Rate Calculator",
-  layout_columns(
-    layout_columns(cards[[1]], cards[[2]], cards[[3]], cards[[4]], cards[[5]],
-                   width = 1/5,
-                   height = 275),
-    layout_columns(vbs[[1]], plot,
-                   height = 350,
-                   col_widths = c(3, 9)),
-    col_widths = c(12, 12)
-  ),
-  card_footer(foot)
+  underline = FALSE,
+  theme = bs_theme(bootswatch = "flatly", success = "#4682b4"),
+  bg = "#082D46",
+  nav_panel(
+    title = " ",
+    layout_columns( 
+      card(
+        helpText("Please fill out the fields below. Then click Predict Rate."),
+        layout_columns(cards[[1]], cards[[2]], cards[[3]], cards[[4]], cards[[5]],
+                       width = 1/5,
+                       height = 170),
+        actionButton("predict", "Predict Rate", width = 200, 
+                     style="color: #fff; background-color: #4682b4;")
+      ),
+      layout_columns(vbs, plot,
+                     height = 500,
+                     col_widths = c(3, 9)),
+      col_widths = c(12, 12)
+    ),
+    card_footer(foot)
+  )
 )
 
 server <- function(input, output, session) {
-  
+
   predictions_df <- reactive({
     
     req(input$term,
@@ -182,7 +187,8 @@ server <- function(input, output, session) {
     
     predict(endpoint, pred_tibble)
     
-  })
+  }) |> 
+    bindEvent(input$predict)
   
   predicted_rate <-
     reactive(predictions_df()$.pred)
@@ -198,7 +204,8 @@ server <- function(input, output, session) {
                                         input$bc_util, 
                                         input$bc_open_to_buy, 
                                         input$percent_bc_gt_75)
-  })
+  })  |> 
+  bindEvent(input$predict)
 
   output$plot <-
     renderPlot({
@@ -207,7 +214,7 @@ server <- function(input, output, session) {
       
       rate_range() |> 
         ggplot(aes(xmin = min_rate, xmax = max_rate, ymin = 1, ymax = 1.5)) +
-        geom_rect(fill = "steelblue") +
+        geom_rect(fill = "#4682b4") +
         geom_segment(
           aes(x = predicted_rate(), xend = predicted_rate(), y = 0.9, yend = 1.6), 
           color = "#082D46",
@@ -219,8 +226,10 @@ server <- function(input, output, session) {
               axis.ticks.y = element_blank()) +
         scale_x_continuous(limits = c(0, max_range),
                            breaks = seq(from = 0, to = max_range, by = 5)) +
-        annotate("text", x = min_rate, label = paste0(min_rate, " "), y = 1.25, hjust = "right", color = "steelblue", size = 7) +
-        annotate("text", x = max_rate, label = paste0(" ", max_rate), y = 1.25, hjust = "left", color = "steelblue", size = 7)
+        annotate("text", x = min_rate, y = 1.25, label = paste0(min_rate, " "), 
+                 hjust = "right", color = "#4682b4", size = 7) +
+        annotate("text", x = max_rate,  y = 1.25, label = paste0(" ", max_rate), 
+                 hjust = "left", color = "#4682b4", size = 7)
     })
   
 }
