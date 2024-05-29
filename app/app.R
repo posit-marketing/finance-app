@@ -125,7 +125,8 @@ vbs <-
     value = textOutput("pred_int"),
     style = "background-color: #082D46!important; color: #FFFFFF!important",
     showcase = bsicons::bs_icon("bank", fill = '#4682b4 !important;'),
-    showcase_layout = "top right"
+    showcase_layout = "top right",
+    height = 500
   )
 
 foot <-
@@ -159,9 +160,12 @@ ui <- bslib::page_navbar(
         actionButton("predict", "Predict Rate", width = 200, 
                      style="color: #fff; background-color: #4682b4;")
       ),
-      layout_columns(vbs, plot,
-                     height = 500,
-                     col_widths = c(3, 9)),
+      layout_columns(
+        conditionalPanel(condition = "input.predict > 0", vbs), 
+        conditionalPanel(condition = "input.predict > 0", plot),
+        height = 500,
+        col_widths = c(3, 9)
+      ),
       col_widths = c(12, 12)
     ),
     card_footer(foot)
