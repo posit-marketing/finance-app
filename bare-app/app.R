@@ -23,6 +23,9 @@ rates <-
          across(everything(), ~ as.numeric(.))) |> 
   collect()
 
+print(dim(rates))
+print(range(rates$int_rate))
+
 cards <- list(
   card(
     card_body(
@@ -197,7 +200,9 @@ server <- function(input, output, session) {
   
   output$plot <-
     renderPlot({
-      plot_interest_rate_range(rate_range()$min_rate, rate_range()$max_rate, predicted_rate())
+      plot_interest_rate_range(rate_range() |> pull(min_rate), 
+                               rate_range() |> pull(max_rate), 
+                               predicted_rate())
     })
   
 }
