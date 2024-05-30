@@ -300,6 +300,8 @@ rmse(lend_linear_results, truth = int_rate, estimate = .pred)
 v <- 
   vetiver_model(lend_linear_fit, "lending_club_model")
 
+# write_rds(v, file = "base-app/vetiver-model.RDS") - much faster app
+
 board <-
   pins::board_connect()
 
