@@ -72,7 +72,7 @@ cards <- list(
     card_body(
       numericInput(
         inputId = "percent_bc_gt_75",
-        value = 25,
+        value = 10,
         min = 0,
         max = 100,
         step = 1,
