@@ -23,46 +23,14 @@ cards <- list(
   card(
     card_body(
       numericInput(
-        inputId = "all_util",
-        value = 0.5,
-        min = 0,
-        max = 1,
-        step = 0.05,
-        label = tooltip(
-          trigger = list("Credit Utilization", bs_icon("info-circle")),
-          "What is the ratio of your current credit balances to your total credit limits for all sources?"
-        )
-      )
-    )
-  ),
-  
-  card(
-    card_body(
-      numericInput(
-        inputId = "bc_util",
-        value = 0.5,
-        min = 0,
-        max = 1,
-        step = 0.05,
-        label = tooltip(
-          trigger = list("Bank Card Utilization", bs_icon("info-circle")),
-          "What is the ratio of your current credit balances to your total credit limits for only bank card sources?"
-        )
-      )
-    )
-  ),
-  
-  card(
-    card_body(
-      numericInput(
-        inputId = "bc_open_to_buy",
-        value = 15000,
+        inputId = "all_balance",
+        value = 5000,
         min = 0,
         max = 500000,
         step = 1000,
         label = tooltip(
-          trigger = list("Available Bank Card Credit", bs_icon("info-circle")),
-          "What is your current available credit across all bank cards?"
+          trigger = list("Credit Balance", bs_icon("info-circle")),
+          "How much credit, in dollars, do you currently have withdrawn from all sources of credit, including bank cards?"
         )
       )
     )
@@ -71,14 +39,46 @@ cards <- list(
   card(
     card_body(
       numericInput(
-        inputId = "percent_bc_gt_75",
-        value = 10,
+        inputId = "all_limit",
+        value = 10000,
         min = 0,
-        max = 100,
-        step = 1,
+        max = 500000,
+        step = 1000,
         label = tooltip(
-          trigger = list("Heavily Withdrawn Cards", bs_icon("info-circle")),
-          "What percent of your bank cards currently have a balance that is greater than 75% of their limit?"
+          trigger = list("Credit Limit", bs_icon("info-circle")),
+          "What is your total credit limit, in dollars, for all sources of credit, including bank cards?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    card_body(
+      numericInput(
+        inputId = "bc_balance",
+        value = 5000,
+        min = 0,
+        max = 500000,
+        step = 1000,
+        label = tooltip(
+          trigger = list("Bank Card Balance", bs_icon("info-circle")),
+          "How much credit, in dollars, do you currently have withdrawn from only bank cards?"
+        )
+      )
+    )
+  ),
+  
+  card(
+    card_body(
+      numericInput(
+        inputId = "bc_limit",
+        value = 10000,
+        min = 0,
+        max = 500000,
+        step = 1000,
+        label = tooltip(
+          trigger = list("Bank Card Limit", bs_icon("info-circle")),
+          "What is your total credit limit, in dollars, for only bank cards?"
         )
       )
     )

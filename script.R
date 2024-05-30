@@ -250,12 +250,12 @@ lend_lasso_fit |>
 
 # Sacrifice in performance
 # ------------------------------------------------------------------------------
-# How much performance do we sacrifice by only using five variables?
+# How much performance do we sacrifice by only using four variables?
 
 set.seed(1234)
 lendingclub_dat_reduced <-
   lendingclub_dat_clean |> 
-  select(int_rate, term, bc_open_to_buy, percent_bc_gt_75, bc_util, all_util)
+  select(int_rate, term, bc_open_to_buy, bc_util, all_util)
 
 reduced_split <- initial_split(lendingclub_dat_reduced)
 
@@ -264,7 +264,7 @@ reduced_test <- testing(reduced_split)
 
 red_rec_obj <- recipe(int_rate ~ ., data = reduced_train) |>
   step_normalize(all_numeric_predictors()) |>
-  step_impute_mean(all_of(c("bc_open_to_buy", "bc_util", "percent_bc_gt_75")))
+  step_impute_mean(all_of(c("bc_open_to_buy", "bc_util")))
 
 lend_linear <- 
   linear_reg()
@@ -301,7 +301,7 @@ v <-
   vetiver_model(lend_linear_fit, "lending_club_model")
 
 v |> 
-  write_rds(file = "base-app/vetiver-model.RDS")
+  write_rds(file = "app/vetiver-model.RDS")
 
 
 # Deploy a Model API

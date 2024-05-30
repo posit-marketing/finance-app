@@ -11,7 +11,7 @@ con <-
 # Return connection to lending club table
 connect_to_lending_club_data_on_databricks <- function(){
   tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
-    select(int_rate, term, all_util, bc_util, bc_open_to_buy, percent_bc_gt_75) |> 
+    select(int_rate, term, all_util, bc_util, bc_open_to_buy) |> 
     filter(!is.na(int_rate)) |> 
     mutate(int_rate = REPLACE(int_rate, "%", ""),
            term = SUBSTRING(term, 2,2),

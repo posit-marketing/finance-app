@@ -52,29 +52,32 @@ ui <- bslib::page_navbar(
 
 server <- function(input, output, session) {
   
+  all_util <- 
+    reactive(input$all_balance / input$all_limit)
+  
+  bc_util <- 
+    reactive(input$bc_balance / input$bc_limit)
+  
+  bc_open_to_buy <-
+    reactive(input$bc_limit - input$bc_balance)
+  
   predictions_df <- 
     reactive({
-      req(input$term,
-          input$all_util,
-          input$bc_util,
-          input$bc_open_to_buy,
-          input$percent_bc_gt_75)
       
       pred_tibble <-
         tibble(term = as.numeric(input$term),
-               all_util = input$all_util,
-               bc_util = input$bc_util,
-               bc_open_to_buy = input$bc_open_to_buy,
-               percent_bc_gt_75 = input$percent_bc_gt_75)
+               all_util = all_util(),
+               bc_util = bc_util(),
+               bc_open_to_buy = bc_open_to_buy())
       
       predict(model, pred_tibble)
     }) |> 
-      bindCache(input$term, 
-                input$all_util, 
-                input$bc_util, 
-                input$bc_open_to_buy, 
-                input$percent_bc_gt_75) |> 
-      bindEvent(input$predict)
+    bindCache(input$term, 
+              input$all_balance, 
+              input$all_limit, 
+              input$bc_balance, 
+              input$bc_limit) |> 
+    bindEvent(input$predict)
   
   output$pred_int <- 
     renderText({
@@ -85,17 +88,16 @@ server <- function(input, output, session) {
     reactive({
       rates |> 
         find_rates_for_similar_applicants(input$term, 
-                                          input$all_util, 
-                                          input$bc_util, 
-                                          input$bc_open_to_buy, 
-                                          input$percent_bc_gt_75)
+                                          all_util(), 
+                                          bc_util(), 
+                                          bc_open_to_buy())
     })  |> 
-      bindCache(input$term, 
-                input$all_util, 
-                input$bc_util, 
-                input$bc_open_to_buy, 
-                input$percent_bc_gt_75) |> 
-      bindEvent(input$predict)
+    bindCache(input$term, 
+              input$all_balance, 
+              input$all_limit, 
+              input$bc_balance, 
+              input$bc_limit) |> 
+    bindEvent(input$predict)
   
   output$plot <-
     renderPlot({
