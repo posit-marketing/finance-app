@@ -300,14 +300,8 @@ rmse(lend_linear_results, truth = int_rate, estimate = .pred)
 v <- 
   vetiver_model(lend_linear_fit, "lending_club_model")
 
-# write_rds(v, file = "base-app/vetiver-model.RDS") - much faster app
-
-board <-
-  pins::board_connect()
-
-
-board |>
-  vetiver_pin_write(v)
+v |> 
+  write_rds(file = "base-app/vetiver-model.RDS")
 
 
 # Deploy a Model API
@@ -315,24 +309,31 @@ board |>
 # We'd like to build an API for our app to use the model. We will make a plumber
 # API and then pin that to our board.
 
-rsconnect::addServer(Sys.getenv("CONNECT_SERVER"))
-
-
-rsconnect::connectApiUser(
-  server = Sys.getenv("CONNECT_SERVER_WITHOUT_HTTP"),
-  account = Sys.getenv("CONNECT_USER"),
-  apiKey = Sys.getenv("CONNECT_API_KEY")
-)
-
-vetiver_deploy_rsconnect(
-  board = board,
-  name = "garrett@posit.co/lending_club_model",
-  predict_args = list(debug = TRUE)
-)
-
-
-# Give your API a path on Connect so we can use it in future steps, e.g.
-# endpoint <- 
-#   vetiver_endpoint(
-#     "https://pub.demo.posit.team/public/lending-club-model-vetiver-api/predict"
-#   )
+# board <-
+#   pins::board_connect()
+# 
+# 
+# board |>
+#   vetiver_pin_write(v)
+# 
+# rsconnect::addServer(Sys.getenv("CONNECT_SERVER"))
+# 
+# 
+# rsconnect::connectApiUser(
+#   server = Sys.getenv("CONNECT_SERVER_WITHOUT_HTTP"),
+#   account = Sys.getenv("CONNECT_USER"),
+#   apiKey = Sys.getenv("CONNECT_API_KEY")
+# )
+# 
+# vetiver_deploy_rsconnect(
+#   board = board,
+#   name = "garrett@posit.co/lending_club_model",
+#   predict_args = list(debug = TRUE)
+# )
+# 
+# 
+# # Give your API a path on Connect so we can use it in future steps, e.g.
+# # endpoint <- 
+# #   vetiver_endpoint(
+# #     "https://pub.demo.posit.team/public/lending-club-model-vetiver-api/predict"
+# #   )
