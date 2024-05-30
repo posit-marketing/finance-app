@@ -13,8 +13,8 @@ library(tune)
 library(broom)
 library(vetiver)
 library(pins)
-library(plumber)
-library(rsconnect)
+# library(plumber)
+# library(rsconnect)
 
 
 
