@@ -36,26 +36,19 @@ In this article, we will use both Posit and Databricks to apply machine learning
 Specifically, we will:
 
 1. Connect to historical lending rate data stored in Databricks Delta Lake
-1. Use tidymodels to tune and cross-validation a penalized linear regression (LASSO) that predicts interest rates
-1. Use the penalized linear regression model (LASSO) to select a small set of variables for users to input into our model
+1. Tune and cross-validate a penalized linear regression (LASSO) that predicts interest rates
+1. Select variables with the penalized linear regression model (LASSO)
 1. Build an interactive Shiny app to provide a customer-facing user interface for our model
-1. Deploy the app to production on Posit Connect
+1. Deploy the app to production on Posit Connect, and arrange for the app to access Databricks
 
-## Connect to Databricks Delta Lake from RStudio IDE
-
-For those with access to Databricks, add the historical lending rate data to your catalog by running the below:
-
-```sql
-CREATE TABLE lending_club USING com.databricks.spark.csv OPTIONS(path 'dbfs:/databricks-datasets/lending-club-loan-stats/LoanStats_2018Q2.csv', header "true");
-```
-
-## Working with Databricks tables
+## Setup
 
 Let's start by loading the packages that will be integral to our workflow.
 
 ```{r}
 #| label: setup
 #| message: false
+#| warning: false
 # Importing data
 library(DBI)
 library(odbc)
@@ -80,6 +73,14 @@ library(tune)
 library(broom)
 ```
 
+For those with access to Databricks, add the historical lending rate data to your catalog by running the below:
+
+```sql
+CREATE TABLE lending_club USING com.databricks.spark.csv OPTIONS(path 'dbfs:/databricks-datasets/lending-club-loan-stats/LoanStats_2018Q2.csv', header "true");
+```
+
+## Connect to Databricks from the RStudio IDE
+
 As previously mentioned, analysts have several options for accessing Databricks data. In this walk-through, we'll demonstrate connectivity using the [odbc package](https://odbc.r-dbi.org/). The Posit Solutions site provides detailed guidance on using the new [odbc `databricks()` function](https://solutions.posit.co/connections/db/databases/databricks/index.html#using-the-new-odbcdatabricks-function). Essentially, we need to store a Databricks token and host URL in our R environment. The function itself requires only the HTTP path to the SQL warehouse.
 
 ```{r}
@@ -90,94 +91,26 @@ con <-
   dbConnect(odbc::databricks(), httpPath = Sys.getenv("HTTP_PATH"))
 ```
 
-This code snippet establishes a connection using the `con` object. With this connection, we can create an object named `lendingclub_dat` that refers to our table in Databricks. 
+This code snippet establishes a connection whose details are stored in the `con` object. With this connection, we can create an object named `lendingclub_dat` that refers to our table in Databricks. 
 
 ```{r}
 #| label: get-tbl-data
 lendingclub_dat <-
-  tbl(con,
-      dbplyr::in_catalog("hive_metastore", "default", "lendingclub"))
+  tbl(con, dbplyr::in_catalog("hive_metastore", "default", "lendingclub"))
 ```
 
-`tbl()` creates the R equivalent of an SQL view: an SQL query that represents a table. For example, `lendingclub_dat` is the virtual table represented by this SQL query. 
+## Working with Databricks tables
+
+`tbl()` creates the R equivalent of an SQL view: an SQL query that represents a table. For example, `lendingclub_dat` is the virtual table represented by this SQL query. We can view the query with `show_query()`.
 
 ```{r}
 lendingclub_dat |> 
   show_query()
 ```
 
-As a result, `lendingclub_dat` is very lightweight---it has no data. The data still lives in Databricks. 
+As a result, `lendingclub_dat` is very lightweight---it has no data. The data still lives in Databricks, and therefore can be far larger than what we would normally import into R. 
 
-But we can still work with `lendingclub_dat` as if it were a data frame. When we manipulate a tbl with dplyr or base R code, dbplyr translates our code to SQL and adds it to the query. 
-
-```{r}
-lendingclub_dat |> 
-  head() |> 
-  select(int_rate, bc_util) |> 
-  show_query()
-```
-
-When we wish to run the accumulated query and access the result, we can call `collect()`. R will send the SQL query to Databricks to be evaluated _in Databricks' compute_. It will then import the result as a real table into R, where we can continue to manipulate it in R, perhaps to run advanced operations on the data that have no equivalent in SQL. 
-
-```{r}
-lendingclub_dat |> 
-  head() |> 
-  select(int_rate, bc_util) |> 
-  collect()
-```
-
-R will also lazily call `collect()` when it needs to to show us a result we ask for. 
-
-```{r}
-lendingclub_dat |> 
-  head() |> 
-  select(int_rate, bc_util)
-```
-
-Since computations normally run faster in Databricks than in R, running operations before pulling data into R with `collect()` leads to significantly faster performance.
-
-
-
-We can manipulate `lendingclub_dat` with dplyr code as if it were a table, but it is not a table and we did not transfer any data from Databricks into R by creating `lendingclub_dat`. 
-
-
-```{r}
-lendingclub_dat |> show_query()
-```
-
-
-
-We can use the [dbplot package](https://edgararuiz.github.io/dbplot/) to generate a ggplot without transferring the data into R. This visualization displays the distribution of the variable we aim to predict, lending rate. Loan amounts are plotted on the x-axis, while the frequency of loans at each amount is depicted on the y-axis. It's shown that the majority of loans have an lending rate of less than 20%.
-
-```{r}
-#| label: dbplot-int-rate
-#| fig-asp: 0.618
-#| warning: false
-lendingclub_dat |>
-  mutate(int_rate = as.numeric(REGEXP_REPLACE(int_rate, "%", ""))) |>
-  db_compute_bins(int_rate, binwidth = 0.5) |>
-  ggplot() +
-  geom_col(
-    aes(x = int_rate, y = count),
-    fill = "#4682b4",
-    color = "#4682b4",
-    alpha = 0.4
-  ) +
-  labs(
-    title = "Distribution of lending rate",
-    x = "Lending rate",
-    y = "Count"
-  ) +
-  theme_minimal()
-```
-
-## Data cleaning and feature engineering
-
-The `lendingclub_dat` object resembles a typical data frame, but it's actually a SQL table. With the [dbplyr package](https://dbplyr.tidyverse.org/), we can use dplyr syntax to query and manipulate these SQL tables directly in R.
-
-Certain columns in `lendingclub_dat` are imported as characters instead of their intended numeric type. The code below shows how we can use dplyr functions to convert them to the correct type. dbplyr then converts this dplyr code into SQL. 
-
-You can see the underlying SQL query by running `show_query()`. Click on the `SQL syntax` tab to see the results of `show_query()`. This example highlights the efficiency of dplyr’s syntax in R, offering a more concise alternative to verbose SQL queries.
+But we can still work with `lendingclub_dat` as if it were an R data frame. When we manipulate a tbl with dplyr or base R code, dbplyr translates our code to SQL and adds it to the query. The comparison below shows some code we might write with R, alongside the SQL translation provided by dbplyr. As you can see, dplyr often provides a more efficient way to write SQL than SQL itself due to its expressive syntax.
 
 ::: {.panel-tabset}
 
@@ -187,9 +120,10 @@ You can see the underlying SQL query by running `show_query()`. Click on the `SQ
 #| label: dplyr-syntax
 #| code-fold: false
 #| eval: false
-tbl(con,
-    dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
-    mutate(across(c(starts_with("annual")), ~ as.numeric(.)))
+lendingclub_dat |>
+    mutate(across(c(starts_with("annual")), ~ as.numeric(.))) |> 
+    select(int_rate, starts_with("annual")) |> 
+    head()
 ```
 
 ## SQL syntax
@@ -197,15 +131,46 @@ tbl(con,
 ```{r}
 #| label: sql-syntax
 #| code-fold: false
-tbl(con,
-    dbplyr::in_catalog("hive_metastore", "default", "lendingclub")) |>
-    mutate(across(c(starts_with("annual")), ~ as.numeric(.))) |>
+lendingclub_dat |>
+    mutate(across(c(starts_with("annual")), ~ as.numeric(.))) |> 
+    select(int_rate, starts_with("annual")) |> 
+    head() |>
     show_query()
 ```
 
 :::
 
-Now, we can proceed with using dplyr to clean up the rest of the variables and create supplementary variables that could potentially influence lending rates. Running operations before pulling the data into R with `collect()` leads to significantly faster performance.
+When we wish to run the accumulated query and access the result, we can call `collect()`. R will send the SQL query to Databricks to be evaluated _in Databricks' compute_. It will then import the result as a real table into R, where we can continue to manipulate it _in R_; for example, to run advanced operations on the data that have no equivalent in SQL. 
+
+```{r}
+lendingclub_subset <-
+  lendingclub_dat |>
+    mutate(across(c(starts_with("annual")), ~ as.numeric(.))) |> 
+    select(int_rate, starts_with("annual")) |> 
+    head() |> 
+  collect()
+
+lendingclub_subset
+```
+
+R will also lazily call `collect()` when it needs to to show us a result that we ask for. 
+
+```{r}
+lendingclub_dat |> 
+  head() |> 
+  select(int_rate, bc_util)
+```
+
+This arrangement has two advantages:
+
+1. As mentioned earlier, we can work with larger data sets than we would normally import into R, since the data remains in Databricks.
+1. We can leverage Databricks' fast compute. Since computations normally run faster in Databricks than in R, running operations before pulling data into R with `collect()` leads to significantly faster performance.
+
+And while this arrangement may seem exotic, it is very true to R's design philosophy. R's precursor, S, was originally created to provide a human friendly syntax layer that would call more formal routines, written in FORTRAN, C, and so on, under the hood.
+
+## Data cleaning
+
+Now, we can proceed with using dplyr to clean up the rest of the variables and create supplementary variables that could potentially influence lending rates.
 
 ```{r}
 #| label: pre-collect-data-clean
@@ -312,7 +277,7 @@ lendingclub_dat_clean <-
   filter(!is.na(int_rate))
 ```
 
-With our data cleaned up, it's time to examine the variables we intend to include in the model. We create vectors for conveniently referencing variable categories later if necessary. Then, we compile all the desired columns into one vector named `all_vars` for use in our model.
+Finally, we create vectors for conveniently referencing variable categories later if necessary.
 
 ```{r}
 #| label: create-variable-vectors
@@ -325,13 +290,39 @@ categorical_vars <-
     "zip_code")
 ```
 
-To ensure our dataset is free of any missing values, we can run the below:
+With our data cleaned up, it's time to examine the variables we intend to include in the model. Let's start with the variable we want to predict.
+
+We can use the [dbplot package](https://edgararuiz.github.io/dbplot/) to generate a ggplot without transferring the data into R. `db_compute_bins()` bins and counts interest rates in Databricks and then returns a small dataset of counts for `ggplot()` to plot. This visualization displays the distribution of the variable we aim to predict, lending rate. Loan amounts are plotted on the x-axis, while the frequency of loans at each amount is depicted on the y-axis. It shows that the majority of loans have an lending rate of less than 20%. It also shows that our response variable may not be normally distributed, an insight that we will ignore for this demo.
+
+```{r}
+#| label: dbplot-int-rate
+#| fig-asp: 0.618
+#| warning: false
+lendingclub_dat |>
+  mutate(int_rate = as.numeric(stringr::str_remove(int_rate, "%"))) |>
+  db_compute_bins(int_rate, binwidth = 0.5) |>
+  ggplot() +
+  geom_col(
+    aes(x = int_rate, y = count),
+    fill = "#4682b4",
+    color = "#4682b4",
+    alpha = 0.4
+  ) +
+  labs(
+    title = "Distribution of lending rate",
+    x = "Lending rate",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+To check whether any of our columns have missing values, we can run the below:
 
 ```{r}
 #| label: check-nas
 #| code-fold: false
-colSums(is.na(lendingclub_dat_clean))
 sum(colSums(is.na(lendingclub_dat_clean)) > 0)
+colSums(is.na(lendingclub_dat_clean))
 ```
 
 We can ensure that no factor columns have fewer than two factors by running the below:
@@ -344,11 +335,7 @@ lendingclub_dat_clean |>
   select(where( ~ nlevels(.) < 2))
 ```
 
-## Variable selection
-
-We will use a lasso regression to choose a succinct, but efficient set of variables to build our model around.
-
-## Model creation
+## Model creation and feature engineering
 
 With our dataset prepared, we can begin the modeling process. This involves creating train and test datasets, which we'll use to train and evaluate our model.
 
@@ -361,9 +348,11 @@ lend_train <- training(train_test_split)
 lend_test <- testing(train_test_split)
 ```
 
-Using tidymodels, we can construct a "recipe" detailing the decisions we want to make for our data:
+Using tidymodels, we can construct a "recipe" detailing the steps we want to take to pre-process our data:
 
 * `step_normalize()`: This recipe step normalizes numeric data to have a standard deviation of one and a mean of zero. Given that our dataset contains numeric values of various units (e.g., dollars, months), normalization ensures that variables with larger value ranges do not disproportionately influence the model.
+* `step_ordinal_score()`: This recipe step encodes variables as ordered categorical variables (ordered factors in R).
+* `step_integer()`: This recipe step converts non-numeric data into a set of integers, based on unique values within the data.
 * `step_impute_mean()`: This recipe step replaces missing values of numeric variables with the mean of those values in the training set. Performing this step now, rather than during the data cleaning phase, prevents information leakage from the testing set into the model. By calculating the mean solely using the training set, we avoid bias when applying it to the testing data during model evaluation.
 
 ```{r}
@@ -384,23 +373,36 @@ To verify that the recipe functions as intended, we can run `prep(rec_obj, lend_
 prep(rec_obj, lend_train) |>  bake(new_data = NULL)
 ```
 
-Now, we proceed with a lasso model. `linear_reg()` specifies a model capable of predicting numeric values from predictors using a linear function. We construct a workflow incorporating our recipe alongside the linear model.
+Now, we proceed with tuning and fitting a model. 
+
+### Model selection
+
+The LASSO regression is a form of penalized linear regression that performs both variable selection and regularization to create a model that has high predictive accuracy, but remains explainable (say, to a bank regulator). 
+
+To perform a LASSO regression, we must choose the value of a hyperparameter, $\lambda$, known as the penalty parameter or the regularization parameter. We cannot know ahead of time what the optimum value of $\lambda$ will be, but we can use R's tidymodels framework to perform hyper-parameter tuning.
+
+To do this, we use R's `glmnet` package as an engine to fit a linear regression. The `glmnet` package requires two parameters. We set `mixture = 1` to perform a LASSO regression (`mixture = 0` would perform a ridge regression). We set the penalty parameter to the desired value of $\lambda$. Here, we set `penalty` to `tune()` to indicate that we want to find the optimum value with hyper-parameter tuning.
 
 ```{r}
-#| label: run-lasso-workflow
+#| label: run-lasso-model
 lend_lasso <- 
   linear_reg(penalty = tune(), mixture = 1) |> 
   set_engine("glmnet")
+```
 
+Finally, we add our model and the recipe above to a tidymodels workflow object. This creates a single workflow that we will apply to our data each time we fit a model.
+
+```{r}
+#| label: run-lasso-workflow
 lend_lasso_wflow <-
   workflow() |>
   add_model(lend_lasso) |>
   add_recipe(rec_obj)
 ```
 
-# Parameter tuning
+### Hyperparameter tuning
 
-We can find the optimal value of lambda with cross-validation.
+We can find the optimal value of $\lambda$ with the `tune_grid()` function from tidymodel's `tune` package. We ask `tune_grid()` to use 10-fold cross-validation on our training data to compare the performance of 50 values of $\lambda$.
 
 ```{r}
 #| label: tune-penalty-parameter
@@ -420,7 +422,7 @@ lasso_grid |>
   collect_metrics()
 ```
 
-Or more commonly, as a lasso path plot.
+Or more commonly, as a plot.
 
 ```{r}
 #| label: lambda-plot
@@ -428,7 +430,7 @@ lasso_grid |>
   autoplot()
 ```
 
-Every parameter below 0.01 seems similar, but 0.01 will give us a parsimonious model. We add the parameter value we choose to our workflow.
+Every parameter value below 0.01 seems similar, but 0.01 will give us a parsimonious model. We add the parameter value that we choose to our workflow.
 
 ```{r}
 #| label: finalize-lambda
@@ -437,7 +439,9 @@ final_lasso_wflow <-
   finalize_workflow(list(penalty = 0.1))
 ```
 
-How well does that model do?. Now, we can fit our model using `fit()` along with the training dataset.
+### Fitting the model
+
+Now, we can fit our tuned model using `fit()` along with the training dataset.
 
 ```{r}
 #| label: fit-lasso-workflow
@@ -445,6 +449,8 @@ lend_lasso_fit <-
   final_lasso_wflow |>
   fit(data = lend_train)
 ```
+
+### Accessing predictions
 
 Below are our predicted lending rates:
 
@@ -454,7 +460,9 @@ Below are our predicted lending rates:
 predict(lend_lasso_fit, new_data = lend_train) 
 ```
 
-Now, let's evaluate our performance. We can analyze our results by calculating the coefficient of determination, which is 0.6 in this case. While this indicates some level of explanatory power, it suggests that our model's estimate may not be very robust.
+### Measuring performance
+
+How well does the model do? We can analyze our results by calculating the coefficient of determination, which is 0.46 in this case. While this indicates some level of explanatory power, it suggests that our model's estimate may not be very robust.
 
 ```{r}
 #| label: rsq-lasso-workflow
@@ -467,10 +475,18 @@ rsq(lend_lasso_results, truth = int_rate, estimate = .pred)
 rmse(lend_lasso_results, truth = int_rate, estimate = .pred)
 ```
 
-# A linear model
+# Reality Check
+
+Now that we have a model, we can ask whether it is useful for our use case. We want to provide a model that loan applicants can use to get a quick estimate. This means that applicants will need to provide a value for every variable used by the model. 
+
+We mentioned above that LASSO regression does variable selection, so let's check how many variables this model selected. The model selects, or uses, a variable if its coefficient is non-zero. 
 
 # How many variables are in this model?
 
+When we extract the underlying parsnip model from our results and run it through the `tidy()` function of the broom package, we see that our model uses 20 variables.
+
+```{r}
+#| label: count-variables
 # library(broom)
 
 lend_lasso_fit |>
@@ -478,26 +494,47 @@ lend_lasso_fit |>
   tidy() |> 
   filter(estimate > 0) |> 
   nrow()
-# 20
+```
 
+This is not realistic for our use case. Unfortunately, we think that clients who use our app will only have patience to input four or five variables. Hence, we need to find the subset of five variables that yield the best predictions.
 
-# Variable Selection
-# ------------------------------------------------------------------------------
-# Unfortunately, we think that clients who use our app will only have patience
-# to input five variables. Hence we need to find the top 5.
+We use the properties of our LASSO model to do this. As we increase the $\lambda$ parameter, more and more variable coefficients go to zero, leaving behind progressively smaller subsets of the most powerful predictors. 
+
+```{r}
+#| label: variable-selection
 lend_lasso_fit |> 
   extract_fit_parsnip() |> 
   autoplot()
+```
 
+We inspect the highest values of $\lambda$ to identify the five best variables to retain.
+
+```{r}
+#| label: final-variables-to-select
 lend_lasso_fit |> 
   extract_fit_parsnip() |> 
   autoplot(min_penalty = 1, top_n = 5)
+```
+
+We choose to use the final subset of four variables, `term`, `all_util`, `bc_util`, and `bc_open_to_buy`, because:
+
+1. We can compute these from fields that are easy for the user to provide:
+
+    +  desired term of the loan
+    +  their current credit limits
+    +  their current credit balances
+    +  their current bank card limits
+    +  their current bank card balances
+    
+2. The fifth term would be difficult for users to calculate, i.e. `percent_bc_gt_75`, the percent of the applicants bank cards that are currently withdrawn by more than 75%, so we choose not to include it.
 
 
-# Sacrifice in performance
-# ------------------------------------------------------------------------------
-# How much performance do we sacrifice by only using four variables?
+# The final model
 
+We now repeat our modeling steps to build a final model with the four variables.
+
+```{r}
+#| label: final-model
 set.seed(1234)
 lendingclub_dat_reduced <-
   lendingclub_dat_clean |> 
@@ -523,6 +560,14 @@ lend_linear_wflow <-
 lend_linear_fit <-
   lend_linear_wflow |>
   fit(data = reduced_train)
+```
+
+## Sacrifice in performance
+
+How much performance do we sacrifice by using only four variables? Quite a bit, as you might suspect. We have much less information with which to make predictions, but we think the trade-off is worth it.
+
+```{r}
+#| label: final-model-performance
 
 lend_linear_results <-
   bind_cols(predict(lend_linear_fit, reduced_train)) |>
@@ -530,83 +575,74 @@ lend_linear_results <-
 
 rsq(lend_linear_results, truth = int_rate, estimate = .pred)
 rmse(lend_linear_results, truth = int_rate, estimate = .pred)
+```
 
-# We will deal
+# Model logging and artifact storage
 
+If we aim to log our model for use in other contexts, like a Shiny app, we can utilize the [vetiver package](https://rstudio.github.io/vetiver-r/). This tool facilitates deploying and maintaining machine learning models in production, allowing us to store models in a pin for convenient access and reference.
 
-# Deploy Model
-# ------------------------------------------------------------------------------
+We can create a vetiver object `v` to store the trained model.
 
-library(readr)
+```{r}
+#| label: create-vetiver-obj
+#| eval: false
+v <- vetiver_model(lend_linear_fit, "lending_club_model")
+```
 
-lend_linear_fit |> 
-  write_rds(file = "app/model.RDS")
+We can deploy the model by creating a special Plumber router in R with the [plumber](https://www.rplumber.io/) package. We add a POST endpoint for making predictions. Following that, we connect to the destination where we intend to store our model artifact. In our case, this would be Posit Connect. Then, we save the vetiver model to a pin for future access.
 
+```{r}
+#| label: add-post-endpoint
+#| eval: false
+board <-
+  board_connect(
+    auth = "manual",
+    server = Sys.getenv("CONNECT_SERVER"),
+    key = Sys.getenv("CONNECT_API_KEY")
+  )
 
+board |> vetiver_pin_write(v)
+```
+
+Now, we can deploy the model to Posit Connect to generate predictions as needed.
+
+```{r}
+#| label: deploy-vetiver-model
+#| eval: false
+rsconnect::addServer(Sys.getenv("CONNECT_SERVER"))
+
+rsconnect::connectApiUser(
+  server = Sys.getenv("CONNECT_SERVER_WITHOUT_HTTP"),
+  account = Sys.getenv("CONNECT_USER"),
+  apiKey = Sys.getenv("CONNECT_API_KEY")
+)
+
+vetiver_deploy_rsconnect(
+  board = board,
+  name = "garrett@posit.co/lending_club_model",
+  predict_args = list(debug = TRUE)
+)
+
+# To generate predictions
+# endpoint <- 
+#   vetiver_endpoint(
+#     "https://pub.demo.posit.team/public/lending-club-model-vetiver-api/predict"
+#   )
+#
+# predict(endpoint, <new_data>)
+```
+
+Now that our model is available through an API, we can use it in other places -- such as a Shiny app! Since our current model is so lightweight, we will skip this step and instead rely on a version of the model bundled with our app. This will make our app slightly faster. Every millisecond counts!
 
 # Interactive Shiny app
 
-Since our model is pinned in an API, it can be retrieved by other applications, such as a Shiny app. Within the `server` section of our Shiny app, we retrieve the data by connecting to our pin board:
+We will use a Shiny app to provide a UI for applicants to send input to our model, and to see the results. Because our predictions are not very robust, we will include a histogram that visualizes the distribution of rates received by applicants with similar characteristics. Since this data lives in Databricks, our Shiny app will need to connect to Databricks to draw the histogram.
 
-```{r}
-#| label: connect-shiny-app
-#| eval: false
-#| code-fold: false
-board <-
-  board_connect(server = Sys.getenv("CONNECT_SERVER"),
-                key = Sys.getenv("CONNECT_API_KEY"))
-```
+## Connect to Databricks from a Shiny app
 
-Access the endpoint URL with `vetiver_endpoint()`:
+We can use the same code as before to connect to Databricks, visible in `authenticate.R` below. In this case, we will provide the environmental variables `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `HTTP_PATH` when we deploy the app. Our app will use these environmental variables on behalf of its users.
 
-```{r}
-#| label: access-shiny-endpoint
-#| code-fold: false
-#| eval: false
-url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/"
-
-endpoint <- vetiver_endpoint(url)
-```
-
-Also in the server portion of the Shiny app, establish a reactive variable (named `predictions_df` here) that generates a tibble from the user's inputs and passes it to the endpoint.
-
-```{r}
-#| label: make-shiny-predictions
-#| eval: false
-#| code-fold: false
-predictions_df <- reactive({
-  req(
-    input$select_term,
-    input$input_installment_pct_inc,
-    input$input_bc_open_to_buy,
-    input$input_installment,
-    input$percent_bc_gt_75
-  )
-
-  pred_tibble <-
-    tibble(
-      term = input$select_term,
-      installment_pct_inc = input$input_installment_pct_inc,
-      bc_open_to_buy = input$input_bc_open_to_buy,
-      installment = input$input_installment,
-      percent_bc_gt_75 = input$percent_bc_gt_75
-    )
-
-  url <- "https://pub.demo.posit.team/public/lend-fit-vetiver-api/predict"
-
-  endpoint <- vetiver_endpoint(url)
-
-  api_key <- Sys.getenv("CONNECT_API_KEY")
-
-  predictions <- predict(
-    endpoint,
-    pred_tibble,
-    httr::add_headers(Authorization = paste("Key", api_key))
-  )
-})
-```
-
-Below is our Shiny app for predicting lending rates. Each time you select an input, it calculates the rate based on our random forest model. The design and layout of the Shiny app is developed with [bslib](https://rstudio.github.io/bslib/).
+Below is our Shiny app for predicting lending rates. Each time you select an input, it calculates the rate based on our model. The design and layout of the Shiny app is developed with [bslib](https://rstudio.github.io/bslib/).
 
 ::: {.panel-tabset}
 
@@ -927,9 +963,43 @@ plot_rate_distribution <- function(distribution) {
 
 :::
 
+# Deploying the app
+
+Posit Connect provides a production ready environment to host our app, and Posit Workbench provides push button publishing to Connect. 
+
+To deploy, we click the Publish icon at the top of our app.
+
+!["To see the publish icon, open app.R in the RStudio IDE. The icon will be on the top right."](images/publish.png){width=500}
+
+This launches a wizard that we can use to connect and publish to a Connect account.
+
+!["The Publish wizard appears when you click the publish icon."](images/wizard.png){width=500}
+
+
+Once our app is deployed, we visit on Connect to:
+
+1. Open view access to anyone
+2. Provide a custom URL for the app
+
+
+!["Once the app is published to Connect, Workbench will automatically open the app controls on Connect in your web browser."](images/settings.png){width=700}
+
+
+We also visit the Vars tab to provide values for the environmental variables that the app will use to access Databricks.
+
+!["Use the Vars tab on Connect to securely set environmental variables."](images/vars.png){width=300}
+
+Our app is now ready for use.
+
+# Summary
+
 In summary, we've gone on a comprehensive journey to predict lending rates using machine learning techniques within the context of financial analysis. We began by accessing our data from Databricks, cleaning our data, and using tidymodels for modeling and evaluation. We developed two predictive models, evaluated their performance, and identified key variables driving interest rate predictions.
 
-Leveraging the power of vetiver, we deployed our model for seamless integration into production environments, such as Shiny apps. This holistic approach can help enhance decision-making processes within the financial domain.
+Leveraging the power of vetiver, we deployed our model for seamless integration into production environments, such as Shiny apps. 
+
+We then deployed our model as a Shiny app that uses Posit Connect's secure environmental variables feature to access Databricks.
+
+This holistic approach can help enhance decision-making processes within the financial domain.
 
 # Learn more about the Databricks x Posit partnership
 
